@@ -19,7 +19,7 @@ for result in results {
 }
 
 results = qt.query_rectangle(&tree, qt.Rectangle{})
-results = qt.query_circle(&tree, radius)
+results = qt.query_circle(&tree, x, y, radius)
 ```
 
 The Quadtree struct requires some parameters:
