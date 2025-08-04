@@ -38,11 +38,11 @@ Quadtree :: struct(
 }
 
 Quadrant :: enum {
-	None,
-	NW,
-	NE,
-	SW,
-	SE,
+	None = -1,
+	NW   = 0,
+	NE   = 1,
+	SW   = 2,
+	SE   = 3,
 }
 
 init :: proc(
@@ -127,7 +127,7 @@ subdivide :: proc(
 				continue
 			}
 
-			index := get_quadrant_index(quadrant)
+			index := int(quadrant)
 			child_node := &qt.nodes[node.children[index]]
 			child_node.entries[child_node.size] = entry_index
 			child_node.size += 1
@@ -157,22 +157,6 @@ get_quadrant :: proc(node: ^Node($EntriesPerNode), rect: Rectangle) -> Quadrant 
 	if bottom && right do return .SE
 
 	return .None
-}
-
-get_quadrant_index :: proc(quadrant: Quadrant) -> int {
-	switch quadrant {
-	case .NW:
-		return 0
-	case .NE:
-		return 1
-	case .SW:
-		return 2
-	case .SE:
-		return 3
-	case .None:
-		return -1
-	}
-	return -1
 }
 
 insert :: proc(
@@ -218,7 +202,7 @@ insert_node :: proc(
 	quadrant := get_quadrant(node, rect)
 	// insert into child node
 	if quadrant != .None {
-		index := get_quadrant_index(quadrant)
+		index := int(quadrant)
 		assert(node.divided, "node was not subdivided")
 		return insert_node(qt, node.children[index], rect, data)
 	}
