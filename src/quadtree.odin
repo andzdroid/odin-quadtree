@@ -200,7 +200,7 @@ insert_node :: proc(
 
 	// not divided yet, insert into current node
 	if node.size < SUBDIVISION_THRESHOLD && !node.divided {
-		if qt.entry_count >= int(EntriesPerNode) {
+		if node.size >= int(EntriesPerNode) {
 			return false
 		}
 
@@ -219,13 +219,13 @@ insert_node :: proc(
 	// insert into child node
 	if quadrant != .None {
 		index := get_quadrant_index(quadrant)
-		assert(node.children[index] > 0, "node was not subdivided")
+		assert(node.divided, "node was not subdivided")
 		return insert_node(qt, node.children[index], rect, data)
 	}
 
 
 	// insert into current node
-	if qt.entry_count >= int(EntriesPerNode) {
+	if node.size >= int(EntriesPerNode) {
 		return false
 	}
 
