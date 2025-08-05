@@ -1,5 +1,6 @@
 package quadtree
 
+import "core:log"
 import "core:math"
 
 SUBDIVISION_THRESHOLD :: 4
@@ -11,15 +12,14 @@ Rectangle :: struct {
 Entry :: struct($T: typeid) {
 	rect: Rectangle,
 	data: T,
+	node: int,
 }
 
 Node :: struct($EntriesPerNode: int) {
 	bounds:   Rectangle,
 	entries:  [EntriesPerNode]int, // entry indices
 	size:     int,
-	level:    int,
-	divided:  bool,
-	children: [4]int, // child node indices
+	children: int, // start index of child node indices, child nodes are contiguous
 }
 
 Quadtree :: struct(
@@ -34,6 +34,8 @@ Quadtree :: struct(
 	entries:     [MaxEntries]Entry(T),
 	node_count:  int,
 	entry_count: int,
+	free_list:   [MaxEntries]int,
+	free_count:  int,
 	results:     [MaxResults]Entry(T),
 }
 
@@ -80,8 +82,9 @@ subdivide :: proc(
 	node_idx: int,
 ) -> bool {
 	assert(node_idx >= 0, "invalid node index")
-	assert(!qt.nodes[node_idx].divided, "node already subdivided")
+	assert(qt.nodes[node_idx].children == 0, "node already subdivided")
 	if qt.node_count + 4 > int(MaxNodes) {
+		log.infof("Quadtree nodes are full: %v / %v", qt.node_count, int(MaxNodes))
 		return false
 	}
 
@@ -92,10 +95,10 @@ subdivide :: proc(
 	y := node.bounds.y
 
 	// create 4 child nodes
+	node.children = qt.node_count
 	for i in 0 ..< 4 {
 		child_idx := qt.node_count
 		qt.node_count += 1
-		node.children[i] = child_idx
 
 		bounds: Rectangle
 		switch i {
@@ -111,27 +114,31 @@ subdivide :: proc(
 
 		qt.nodes[child_idx] = {
 			bounds = bounds,
-			level  = node.level + 1,
 		}
 	}
-
-	node.divided = true
 
 	// try to move entries into children
 	if node.size > 0 {
 		for i := node.size - 1; i >= 0; i -= 1 {
 			entry_index := node.entries[i]
-			entry := qt.entries[entry_index]
+			entry := &qt.entries[entry_index]
 			quadrant := get_quadrant(node, entry.rect)
 			if quadrant == .None {
 				continue
 			}
 
 			index := int(quadrant)
-			child_node := &qt.nodes[node.children[index]]
+			child_node_idx := node.children + index
+
+			// update entry back reference
+			entry.node = child_node_idx
+
+			// insert entry into child node
+			child_node := &qt.nodes[node.children + index]
 			child_node.entries[child_node.size] = entry_index
 			child_node.size += 1
 
+			// remove entry from current node
 			node.entries[i] = node.entries[node.size - 1]
 			node.size -= 1
 		}
@@ -159,11 +166,27 @@ get_quadrant :: proc(node: ^Node($EntriesPerNode), rect: Rectangle) -> Quadrant 
 	return .None
 }
 
+get_next_index :: proc(
+	qt: ^Quadtree($MaxNodes, $MaxEntries, $EntriesPerNode, $MaxResults, $T),
+) -> int {
+	if qt.free_count > 0 {
+		qt.free_count -= 1
+		return qt.free_list[qt.free_count]
+	}
+
+	index := qt.entry_count
+	qt.entry_count += 1
+	return index
+}
+
 insert :: proc(
 	qt: ^Quadtree($MaxNodes, $MaxEntries, $EntriesPerNode, $MaxResults, $T),
 	rect: Rectangle,
 	data: T,
-) -> bool {
+) -> (
+	int,
+	bool,
+) {
 	return insert_node(qt, 0, rect, data)
 }
 
@@ -172,52 +195,95 @@ insert_node :: proc(
 	node_idx: int,
 	rect: Rectangle,
 	data: T,
-) -> bool {
+) -> (
+	int,
+	bool,
+) {
 	node := &qt.nodes[node_idx]
 	if !contains(node.bounds, rect) {
-		return false
+		return 0, false
 	}
 
-	if qt.entry_count >= int(MaxEntries) {
-		return false
+	if qt.entry_count >= int(MaxEntries) && qt.free_count == 0 {
+		// log.infof("Quadtree entries are full: %v / %v", qt.entry_count, int(MaxEntries))
+		return 0, false
 	}
 
-	// not divided yet, insert into current node
-	if node.size < SUBDIVISION_THRESHOLD && !node.divided {
+	if node.size < SUBDIVISION_THRESHOLD && node.children == 0 {
 		if node.size >= int(EntriesPerNode) {
-			return false
+			log.infof("Node %v is full", node.bounds)
+			return 0, false
 		}
-
-		node.entries[node.size] = qt.entry_count
-		qt.entries[qt.entry_count] = {rect, data}
-		qt.entry_count += 1
+		index := get_next_index(qt)
+		node.entries[node.size] = index
+		qt.entries[index] = {rect, data, node_idx}
 		node.size += 1
-		return true
+		return index, true
 	}
 
-	if !node.divided {
-		subdivide(qt, node_idx) or_return
+	reached_node_limit := qt.node_count + 4 > int(MaxNodes)
+	if node.children == 0 && !reached_node_limit {
+		if !subdivide(qt, node_idx) {
+			return 0, false
+		}
 	}
 
 	quadrant := get_quadrant(node, rect)
 	// insert into child node
-	if quadrant != .None {
+	if quadrant != .None && node.children != 0 {
 		index := int(quadrant)
-		assert(node.divided, "node was not subdivided")
-		return insert_node(qt, node.children[index], rect, data)
+		return insert_node(qt, node.children + index, rect, data)
 	}
-
 
 	// insert into current node
 	if node.size >= int(EntriesPerNode) {
+		log.infof("Node %v is full", node.bounds)
+		return 0, false
+	}
+	index := get_next_index(qt)
+	qt.entries[index] = {rect, data, node_idx}
+	node.entries[node.size] = index
+	node.size += 1
+	return index, true
+}
+
+remove :: proc(
+	qt: ^Quadtree($MaxNodes, $MaxEntries, $EntriesPerNode, $MaxResults, $T),
+	index: int,
+) -> bool {
+	if index < 0 || index >= qt.entry_count {
 		return false
 	}
 
-	node.entries[node.size] = qt.entry_count
-	qt.entries[qt.entry_count] = {rect, data}
-	qt.entry_count += 1
-	node.size += 1
-	return true
+	entry := &qt.entries[index]
+	node := &qt.nodes[entry.node]
+
+	for i := node.size - 1; i >= 0; i -= 1 {
+		if node.entries[i] == index {
+			node.entries[i] = node.entries[node.size - 1]
+			node.size -= 1
+			qt.free_list[qt.free_count] = index
+			qt.free_count += 1
+			return true
+		}
+	}
+
+	return false
+}
+
+update :: proc(
+	qt: ^Quadtree($MaxNodes, $MaxEntries, $EntriesPerNode, $MaxResults, $T),
+	index: int,
+	rect: Rectangle,
+	data: T,
+) -> (
+	int,
+	bool,
+) {
+	if !remove(qt, index) {
+		return 0, false
+	}
+	return insert(qt, rect, data)
 }
 
 query_rectangle :: proc(
@@ -255,9 +321,9 @@ query_rectangle_node :: proc(
 		result_count += 1
 	}
 
-	if node.divided {
-		for child_idx in node.children {
-			result_count = query_rectangle_node(qt, child_idx, rect, result_count)
+	if node.children != 0 {
+		for child_idx in 0 ..< 4 {
+			result_count = query_rectangle_node(qt, node.children + child_idx, rect, result_count)
 		}
 	}
 
@@ -310,11 +376,11 @@ query_circle_node :: proc(
 		result_count += 1
 	}
 
-	if node.divided {
-		for child_idx in node.children {
+	if node.children != 0 {
+		for child_idx in 0 ..< 4 {
 			result_count = query_circle_node(
 				qt,
-				child_idx,
+				node.children + child_idx,
 				center_x,
 				center_y,
 				radius,
@@ -365,9 +431,9 @@ query_point_node :: proc(
 		result_count += 1
 	}
 
-	if node.divided {
-		for child_idx in node.children {
-			result_count = query_point_node(qt, child_idx, x, y, result_count)
+	if node.children != 0 {
+		for child_idx in 0 ..< 4 {
+			result_count = query_point_node(qt, node.children + child_idx, x, y, result_count)
 		}
 	}
 

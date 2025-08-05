@@ -9,15 +9,18 @@ import rl "vendor:raylib"
 WIDTH :: 1280
 HEIGHT :: 800
 
-MAX_NODES :: 1024
+MAX_NODES :: 1000
 MAX_ENTRIES :: 10000
 MAX_ENTRIES_PER_NODE :: 1000
 MAX_QUERY_RESULTS :: 100
 
 Circle :: struct {
-	position: rl.Vector2,
-	radius:   f32,
-	color:    rl.Color,
+	position:  rl.Vector2,
+	direction: rl.Vector2,
+	speed:     f32,
+	radius:    f32,
+	color:     rl.Color,
+	index:     int,
 }
 
 main :: proc() {
@@ -29,16 +32,15 @@ main :: proc() {
 
 	rl.SetTargetFPS(240)
 
-	tree := new(
-		qt.Quadtree(MAX_NODES, MAX_ENTRIES, MAX_ENTRIES_PER_NODE, MAX_QUERY_RESULTS, Circle),
-	)
+	tree := new(qt.Quadtree(MAX_NODES, MAX_ENTRIES, MAX_ENTRIES_PER_NODE, MAX_QUERY_RESULTS, int))
 	defer free(tree)
 
 	qt.init(tree, {0, 0, f32(WIDTH), f32(HEIGHT)})
 
-	circles := make([dynamic]Circle)
-	defer delete(circles)
+	circles := new([MAX_ENTRIES]Circle)
+	defer free(circles)
 
+	circle_count := 0
 	query_mode := 0
 
 	for !rl.WindowShouldClose() {
@@ -46,37 +48,87 @@ main :: proc() {
 		rl.ClearBackground(rl.BLACK)
 
 		if rl.IsMouseButtonPressed(.LEFT) {
-			circle := Circle {
-				position = rl.GetMousePosition(),
-				radius   = rand.float32_range(5, 15),
-				color    = random_color(),
+			// spawn 10 circles
+			for i in 0 ..< 10 {
+				circle_index := circle_count
+				circle_count += 1
+
+				circle := Circle {
+					position  = rl.GetMousePosition(),
+					direction = {rand.float32_range(-1, 1), rand.float32_range(-1, 1)},
+					speed     = rand.float32_range(20, 150),
+					radius    = rand.float32_range(5, 15),
+					color     = random_color(),
+				}
+				rect := qt.Rectangle {
+					x      = circle.position.x - circle.radius,
+					y      = circle.position.y - circle.radius,
+					width  = circle.radius * 2,
+					height = circle.radius * 2,
+				}
+				circle.index, _ = qt.insert(tree, rect, circle_index)
+				circles[circle_index] = circle
 			}
-			rect := qt.Rectangle {
-				x      = circle.position.x - circle.radius,
-				y      = circle.position.y - circle.radius,
-				width  = circle.radius * 2,
-				height = circle.radius * 2,
-			}
-			append(&circles, circle)
-			qt.insert(tree, rect, circle)
 		}
 
 		if rl.IsMouseButtonPressed(.RIGHT) {
 			query_mode = (query_mode + 1) % 3
 		}
 
-		for circle in circles {
+		// Draw quadtree
+		for i in 0 ..< tree.node_count {
+			rl.DrawRectangleLinesEx(rl.Rectangle(tree.nodes[i].bounds), 0.5, {255, 255, 255, 64})
+		}
+
+		dt := rl.GetFrameTime()
+
+		// Update and draw circles
+		for i in 0 ..< circle_count {
+			circle := &circles[i]
+
+			circle.position += circle.direction * dt * circle.speed
+			if circle.position.x < circle.radius + 1 ||
+			   circle.position.x > f32(WIDTH) - circle.radius - 1 {
+				circle.direction.x *= -1
+				circle.position.x = math.clamp(
+					circle.position.x,
+					circle.radius + 1,
+					f32(WIDTH) - circle.radius - 1,
+				)
+			}
+			if circle.position.y < circle.radius + 1 ||
+			   circle.position.y > f32(HEIGHT) - circle.radius - 1 {
+				circle.direction.y *= -1
+				circle.position.y = math.clamp(
+					circle.position.y,
+					circle.radius + 1,
+					f32(HEIGHT) - circle.radius - 1,
+				)
+			}
+
+			circle_index, ok := qt.update(
+				tree,
+				circle.index,
+				{
+					x = circle.position.x - circle.radius,
+					y = circle.position.y - circle.radius,
+					width = circle.radius * 2,
+					height = circle.radius * 2,
+				},
+				i,
+			)
+
 			rl.DrawCircleV(circle.position, circle.radius, circle.color)
 		}
 
 		switch query_mode {
 		case 0:
-			found := qt.query_point(tree, rl.GetMousePosition().x, rl.GetMousePosition().y)
-			for circle in found {
-				highlight_circle(circle.data)
+			results := qt.query_point(tree, rl.GetMousePosition().x, rl.GetMousePosition().y)
+			for result in results {
+				highlight_circle(circles[result.data])
 			}
 		case 1:
-			found := qt.query_rectangle(
+			results := qt.query_rectangle(
 				tree,
 				{
 					x = rl.GetMousePosition().x - 50,
@@ -85,6 +137,9 @@ main :: proc() {
 					height = 100,
 				},
 			)
+			for result in results {
+				highlight_circle(circles[result.data])
+			}
 			rl.DrawRectangleLinesEx(
 				{
 					x = rl.GetMousePosition().x - 50,
@@ -95,16 +150,17 @@ main :: proc() {
 				2,
 				rl.RED,
 			)
-			for circle in found {
-				highlight_circle(circle.data)
-			}
 		case 2:
-			found := qt.query_circle(tree, rl.GetMousePosition().x, rl.GetMousePosition().y, 50)
-			rl.DrawCircleLinesV(rl.GetMousePosition(), 50, rl.RED)
-			for circle in found {
-				highlight_circle(circle.data)
+			results := qt.query_circle(tree, rl.GetMousePosition().x, rl.GetMousePosition().y, 50)
+			for result in results {
+				highlight_circle(circles[result.data])
 			}
+			rl.DrawCircleLinesV(rl.GetMousePosition(), 50, rl.RED)
 		}
+
+		instructions := cstring("Left click to add, right click to change query")
+		instructions_width := rl.MeasureText(instructions, 20)
+		rl.DrawRectangle(0, 0, instructions_width + 20, 160, {0, 0, 0, 200})
 
 		node_count := rl.TextFormat("Nodes: %v / %v", tree.node_count, MAX_NODES)
 		rl.DrawText(node_count, 10, 10, 20, rl.WHITE)
@@ -116,7 +172,6 @@ main :: proc() {
 		fps_text := rl.TextFormat("FPS: %d", rl.GetFPS())
 		rl.DrawText(fps_text, 10, 100, 20, rl.WHITE)
 
-		instructions := cstring("Left click to add, right click to change query")
 		rl.DrawText(instructions, 10, 130, 20, rl.WHITE)
 
 		rl.EndDrawing()
@@ -140,8 +195,8 @@ highlight_circle :: proc(circle: Circle) {
 			width = circle.radius * 2 + 2,
 			height = circle.radius * 2 + 2,
 		},
-		2,
-		rl.WHITE,
+		1,
+		rl.YELLOW,
 	)
 }
 
