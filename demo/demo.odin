@@ -9,9 +9,8 @@ import rl "vendor:raylib"
 WIDTH :: 1280
 HEIGHT :: 800
 
-MAX_NODES :: 1000
+MAX_NODES :: 1001
 MAX_ENTRIES :: 10000
-MAX_ENTRIES_PER_NODE :: 1000
 MAX_QUERY_RESULTS :: 100
 
 Circle :: struct {
@@ -32,7 +31,7 @@ main :: proc() {
 
 	rl.SetTargetFPS(240)
 
-	tree := new(qt.Quadtree(MAX_NODES, MAX_ENTRIES, MAX_ENTRIES_PER_NODE, MAX_QUERY_RESULTS, int))
+	tree := new(qt.Quadtree(MAX_NODES, MAX_ENTRIES, MAX_QUERY_RESULTS, int))
 	defer free(tree)
 
 	qt.init(tree, {0, 0, f32(WIDTH), f32(HEIGHT)})

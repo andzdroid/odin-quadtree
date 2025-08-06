@@ -9,7 +9,7 @@ The entire source is in `src/quadtree.odin`.
 ## Usage
 
 ```odin
-tree: qt.Quadtree(maxNodes, maxEntries, entriesPerNode, maxResults, YourDataType)
+tree: qt.Quadtree(maxNodes, maxEntries, maxResults, YourDataType)
 bounds := qt.Rectangle{x, y, width, height}
 qt.init(&tree, bounds)
 
@@ -30,9 +30,8 @@ results = qt.query_circle(&tree, x, y, radius)
 
 The Quadtree struct requires some parameters:
 
-- MaxNodes - Each time an area is subdivided, 4 nodes are added.
+- MaxNodes - Each time an area is subdivided, 4 nodes are added. `(MaxNodes - 1)` should be a multiple of 4 (4 for each subdivision + 1 root node).
 - MaxEntries - The max number of entries you will add to the tree.
-- EntriesPerNode - The max number of entries that sit on a boundary line and cannot be moved into a subdivision.
 - MaxResults - The max number of results you want to fetch from queries.
 - T - this is the type of data you want to store with each entry.
 

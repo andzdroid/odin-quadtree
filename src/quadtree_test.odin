@@ -1,10 +1,11 @@
 package quadtree
 
+import "core:log"
 import "core:testing"
 
 @(test)
 test_quadtree_creation :: proc(t: ^testing.T) {
-	tree: Quadtree(100, 100, 50, 10, int)
+	tree: Quadtree(100, 100, 10, int)
 	bounds := Rectangle{0, 0, 100, 100}
 	init(&tree, bounds)
 	testing.expect(t, tree.nodes[0].bounds == bounds, "Root bounds should match")
@@ -12,7 +13,7 @@ test_quadtree_creation :: proc(t: ^testing.T) {
 
 @(test)
 test_point_insertion :: proc(t: ^testing.T) {
-	tree: Quadtree(100, 100, 50, 10, int)
+	tree: Quadtree(100, 100, 10, int)
 	bounds := Rectangle{0, 0, 100, 100}
 	init(&tree, bounds)
 
@@ -21,16 +22,16 @@ test_point_insertion :: proc(t: ^testing.T) {
 
 	idx1, ok := insert(&tree, p1, 1)
 	testing.expect(t, ok, "Should insert point within bounds")
-	testing.expect(t, idx1 == 0, "Should return index 0")
+	testing.expect(t, idx1 == 1, "Should return index 1")
 	idx2, ok2 := insert(&tree, p2, 2)
 	testing.expect(t, ok2, "Should insert second point")
-	testing.expect(t, idx2 == 1, "Should return index 1")
+	testing.expect(t, idx2 == 2, "Should return index 2")
 	testing.expect(t, tree.nodes[0].size == 2, "Root should have 2 points")
 }
 
 @(test)
 test_subdivision :: proc(t: ^testing.T) {
-	tree: Quadtree(100, 100, 50, 10, int)
+	tree: Quadtree(100, 100, 10, int)
 	bounds := Rectangle{0, 0, 100, 100}
 	init(&tree, bounds)
 
@@ -59,11 +60,11 @@ test_subdivision :: proc(t: ^testing.T) {
 	se_node := &tree.nodes[se]
 	root_node := &tree.nodes[0]
 
-	nw_data := tree.entries[nw_node.entries[0]]
-	ne_data := tree.entries[ne_node.entries[0]]
-	sw_data := tree.entries[sw_node.entries[0]]
-	se_data := tree.entries[se_node.entries[0]]
-	root_data := tree.entries[root_node.entries[0]]
+	nw_data := tree.entries[nw_node.entries]
+	ne_data := tree.entries[ne_node.entries]
+	sw_data := tree.entries[sw_node.entries]
+	se_data := tree.entries[se_node.entries]
+	root_data := tree.entries[root_node.entries]
 
 	testing.expect(
 		t,
@@ -96,7 +97,7 @@ test_subdivision :: proc(t: ^testing.T) {
 
 @(test)
 test_query_rectangle :: proc(t: ^testing.T) {
-	tree: Quadtree(100, 100, 50, 10, int)
+	tree: Quadtree(100, 100, 10, int)
 	bounds := Rectangle{0, 0, 100, 100}
 	init(&tree, bounds)
 
@@ -110,7 +111,7 @@ test_query_rectangle :: proc(t: ^testing.T) {
 
 @(test)
 test_out_of_bounds :: proc(t: ^testing.T) {
-	tree: Quadtree(100, 100, 50, 10, int)
+	tree: Quadtree(100, 100, 10, int)
 	bounds := Rectangle{0, 0, 100, 100}
 	init(&tree, bounds)
 
@@ -122,7 +123,7 @@ test_out_of_bounds :: proc(t: ^testing.T) {
 
 @(test)
 test_query_circle :: proc(t: ^testing.T) {
-	tree: Quadtree(100, 100, 50, 10, int)
+	tree: Quadtree(100, 100, 10, int)
 	bounds := Rectangle{0, 0, 100, 100}
 	init(&tree, bounds)
 
@@ -146,7 +147,7 @@ test_query_circle :: proc(t: ^testing.T) {
 
 @(test)
 test_query_circle_empty :: proc(t: ^testing.T) {
-	tree: Quadtree(100, 100, 50, 10, int)
+	tree: Quadtree(100, 100, 10, int)
 	bounds := Rectangle{0, 0, 100, 100}
 	init(&tree, bounds)
 
@@ -156,7 +157,7 @@ test_query_circle_empty :: proc(t: ^testing.T) {
 
 @(test)
 test_query_point :: proc(t: ^testing.T) {
-	tree: Quadtree(100, 100, 50, 10, int)
+	tree: Quadtree(100, 100, 10, int)
 	bounds := Rectangle{0, 0, 100, 100}
 	init(&tree, bounds)
 
@@ -178,7 +179,7 @@ test_query_point :: proc(t: ^testing.T) {
 
 @(test)
 test_query_point_overlapping :: proc(t: ^testing.T) {
-	tree: Quadtree(100, 100, 50, 10, int)
+	tree: Quadtree(100, 100, 10, int)
 	bounds := Rectangle{0, 0, 100, 100}
 	init(&tree, bounds)
 
@@ -192,7 +193,7 @@ test_query_point_overlapping :: proc(t: ^testing.T) {
 
 @(test)
 test_remove_basic :: proc(t: ^testing.T) {
-	tree: Quadtree(100, 100, 50, 10, int)
+	tree: Quadtree(100, 100, 10, int)
 	bounds := Rectangle{0, 0, 100, 100}
 	init(&tree, bounds)
 
@@ -203,13 +204,13 @@ test_remove_basic :: proc(t: ^testing.T) {
 	removed := remove(&tree, idx)
 	testing.expect(t, removed, "Should remove entry")
 	testing.expect(t, tree.nodes[0].size == 0, "Should have 0 entries after removal")
-	testing.expect(t, tree.entry_count == 1, "Entry count should be 0")
-	testing.expect(t, tree.free_count == 1, "Free count should be 1")
+	testing.expect(t, tree.entry_count == 1, "Entry count should be 1")
+	testing.expect(t, tree.next_free == idx, "Index should be next free entry")
 }
 
 @(test)
 test_remove_invalid_index :: proc(t: ^testing.T) {
-	tree: Quadtree(100, 100, 50, 10, int)
+	tree: Quadtree(100, 100, 10, int)
 	bounds := Rectangle{0, 0, 100, 100}
 	init(&tree, bounds)
 
@@ -222,7 +223,7 @@ test_remove_invalid_index :: proc(t: ^testing.T) {
 
 @(test)
 test_remove_from_subdivided :: proc(t: ^testing.T) {
-	tree: Quadtree(100, 100, 50, 10, int)
+	tree: Quadtree(100, 100, 10, int)
 	bounds := Rectangle{0, 0, 100, 100}
 	init(&tree, bounds)
 
@@ -249,7 +250,7 @@ test_remove_from_subdivided :: proc(t: ^testing.T) {
 
 @(test)
 test_remove_from_root_after_subdivision :: proc(t: ^testing.T) {
-	tree: Quadtree(100, 100, 50, 10, int)
+	tree: Quadtree(100, 100, 10, int)
 	bounds := Rectangle{0, 0, 100, 100}
 	init(&tree, bounds)
 
@@ -271,7 +272,7 @@ test_remove_from_root_after_subdivision :: proc(t: ^testing.T) {
 
 @(test)
 test_remove_multiple_entries :: proc(t: ^testing.T) {
-	tree: Quadtree(100, 100, 50, 10, int)
+	tree: Quadtree(100, 100, 10, int)
 	bounds := Rectangle{0, 0, 100, 100}
 	init(&tree, bounds)
 
@@ -291,12 +292,13 @@ test_remove_multiple_entries :: proc(t: ^testing.T) {
 	testing.expect(t, tree.nodes[0].size == 0, "Should have 0 entries")
 
 	found := query_rectangle(&tree, Rectangle{0, 0, 100, 100})
+	log.infof("found: %v", found)
 	testing.expect(t, len(found) == 0, "Should find no entries")
 }
 
 @(test)
 test_remove_and_reinsert :: proc(t: ^testing.T) {
-	tree: Quadtree(100, 100, 50, 10, int)
+	tree: Quadtree(100, 100, 10, int)
 	bounds := Rectangle{0, 0, 100, 100}
 	init(&tree, bounds)
 
@@ -306,7 +308,7 @@ test_remove_and_reinsert :: proc(t: ^testing.T) {
 	idx2, ok := insert(&tree, Rectangle{30, 30, 10, 10}, 2)
 	testing.expect(t, ok, "Should reinsert after removal")
 	testing.expect(t, idx2 == idx1, "Should reuse freed index")
-	testing.expect(t, tree.free_count == 0, "Free count should be 0")
+	testing.expect(t, tree.next_free == 0, "No free entries")
 
 	found := query_rectangle(&tree, Rectangle{25, 25, 20, 20})
 	testing.expect(t, len(found) == 1, "Should find reinserted entry")
@@ -315,7 +317,7 @@ test_remove_and_reinsert :: proc(t: ^testing.T) {
 
 @(test)
 test_update_basic :: proc(t: ^testing.T) {
-	tree: Quadtree(100, 100, 50, 10, int)
+	tree: Quadtree(100, 100, 10, int)
 	bounds := Rectangle{0, 0, 100, 100}
 	init(&tree, bounds)
 
@@ -336,7 +338,7 @@ test_update_basic :: proc(t: ^testing.T) {
 
 @(test)
 test_update_invalid_index :: proc(t: ^testing.T) {
-	tree: Quadtree(100, 100, 50, 10, int)
+	tree: Quadtree(100, 100, 10, int)
 	bounds := Rectangle{0, 0, 100, 100}
 	init(&tree, bounds)
 
@@ -350,7 +352,7 @@ test_update_invalid_index :: proc(t: ^testing.T) {
 
 @(test)
 test_update_out_of_bounds :: proc(t: ^testing.T) {
-	tree: Quadtree(100, 100, 50, 10, int)
+	tree: Quadtree(100, 100, 10, int)
 	bounds := Rectangle{0, 0, 100, 100}
 	init(&tree, bounds)
 
@@ -364,7 +366,7 @@ test_update_out_of_bounds :: proc(t: ^testing.T) {
 
 @(test)
 test_update_subdivided_to_different_quadrant :: proc(t: ^testing.T) {
-	tree: Quadtree(100, 100, 50, 10, int)
+	tree: Quadtree(100, 100, 10, int)
 	bounds := Rectangle{0, 0, 100, 100}
 	init(&tree, bounds)
 
@@ -393,7 +395,7 @@ test_update_subdivided_to_different_quadrant :: proc(t: ^testing.T) {
 
 @(test)
 test_update_same_position_different_data :: proc(t: ^testing.T) {
-	tree: Quadtree(100, 100, 50, 10, int)
+	tree: Quadtree(100, 100, 10, int)
 	bounds := Rectangle{0, 0, 100, 100}
 	init(&tree, bounds)
 
@@ -410,7 +412,7 @@ test_update_same_position_different_data :: proc(t: ^testing.T) {
 
 @(test)
 test_update_multiple_sequential :: proc(t: ^testing.T) {
-	tree: Quadtree(100, 100, 50, 10, int)
+	tree: Quadtree(100, 100, 10, int)
 	bounds := Rectangle{0, 0, 100, 100}
 	init(&tree, bounds)
 

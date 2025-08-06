@@ -6,14 +6,21 @@ import "core:math/rand"
 import "core:time"
 
 /*
-Insert total:  621.989ms , average:  621ns
-Query total:  1.208854s , average:  12.088µs
-Remove total:  116.254ms , average:  116ns
+Array:
+Size of tree: 547.8222 MB
+Insert total:  644.153ms , average:  644ns
+Query total:  1.213059s , average:  12.13µs
+Remove total:  123.191ms , average:  123ns
+
+Double linked list:
+Size of tree: 55.959229 MB
+Insert total:  500.106ms , average:  500ns
+Query total:  1.204676s , average:  12.046µs
+Remove total:  22.838ms , average:  22ns
 */
 
 MAX_NODES :: 65_537
 MAX_ENTRIES :: 1_000_000
-MAX_ENTRIES_PER_NODE :: 1000
 MAX_QUERY_RESULTS :: 1000
 
 QUERY_ITERATIONS :: 100_000
@@ -24,12 +31,12 @@ Handle :: struct {
 }
 
 main :: proc() {
-	tree := new(
-		qt.Quadtree(MAX_NODES, MAX_ENTRIES, MAX_ENTRIES_PER_NODE, MAX_QUERY_RESULTS, Handle),
-	)
+	tree := new(qt.Quadtree(MAX_NODES, MAX_ENTRIES, MAX_QUERY_RESULTS, Handle))
 	defer free(tree)
 
 	qt.init(tree, {0, 0, 100000, 100000})
+
+	fmt.println("Size of tree:", (f32(size_of(tree^)) / 1024 / 1024), "MB")
 
 	// insert
 	start := time.now()
