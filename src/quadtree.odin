@@ -19,7 +19,7 @@ Entry :: struct($T: typeid) {
 
 Node :: struct {
 	bounds:   Rectangle,
-	entries:  int, // start index
+	entries:  int, // index of first entry
 	size:     int,
 	children: int, // start index of child node indices, child nodes are contiguous
 }
@@ -43,29 +43,10 @@ Quadrant :: enum {
 
 init :: proc(qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T), bounds: Rectangle) {
 	assert(bounds.width > 0 && bounds.height > 0, "bounds must have positive dimensions")
-
 	qt.nodes[0] = {
 		bounds = bounds,
 	}
 	qt.node_count = 1
-}
-
-contains :: proc(rect: Rectangle, rect2: Rectangle) -> bool {
-	return(
-		rect2.x >= rect.x &&
-		rect2.x + rect2.width <= rect.x + rect.width &&
-		rect2.y >= rect.y &&
-		rect2.y + rect2.height <= rect.y + rect.height \
-	)
-}
-
-intersects :: proc(rect1, rect2: Rectangle) -> bool {
-	return(
-		!(rect2.x > rect1.x + rect1.width ||
-			rect2.x + rect2.width < rect1.x ||
-			rect2.y > rect1.y + rect1.height ||
-			rect2.y + rect2.height < rect1.y) \
-	)
 }
 
 subdivide :: proc(qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T), node_idx: int) -> bool {
@@ -77,31 +58,14 @@ subdivide :: proc(qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T), node_i
 	}
 
 	node := &qt.nodes[node_idx]
-	half_width := node.bounds.width / 2
-	half_height := node.bounds.height / 2
-	x := node.bounds.x
-	y := node.bounds.y
 
 	// create 4 child nodes
 	node.children = qt.node_count
+	qt.node_count += 4
 	for i in 0 ..< 4 {
-		child_idx := qt.node_count
-		qt.node_count += 1
-
-		bounds: Rectangle
-		switch i {
-		case 0:
-			bounds = {x, y, half_width, half_height}
-		case 1:
-			bounds = {x + half_width, y, half_width, half_height}
-		case 2:
-			bounds = {x, y + half_height, half_width, half_height}
-		case 3:
-			bounds = {x + half_width, y + half_height, half_width, half_height}
-		}
-
+		child_idx := node.children + i
 		qt.nodes[child_idx] = {
-			bounds = bounds,
+			bounds = get_quadrant_bounds(node.bounds, Quadrant(i)),
 		}
 	}
 
@@ -168,8 +132,28 @@ get_quadrant :: proc(node: ^Node, rect: Rectangle) -> Quadrant {
 	if top && left do return .NW
 	if bottom && left do return .SW
 	if bottom && right do return .SE
-
 	return .None
+}
+
+get_quadrant_bounds :: proc(rect: Rectangle, quadrant: Quadrant) -> Rectangle {
+	half_width := rect.width / 2
+	half_height := rect.height / 2
+	x := rect.x
+	y := rect.y
+
+	switch quadrant {
+	case .NW:
+		return {x, y, half_width, half_height}
+	case .NE:
+		return {x + half_width, y, half_width, half_height}
+	case .SW:
+		return {x, y + half_height, half_width, half_height}
+	case .SE:
+		return {x + half_width, y + half_height, half_width, half_height}
+	case .None:
+		return {}
+	}
+	return {}
 }
 
 get_next_index :: proc(qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T)) -> int {
@@ -215,20 +199,7 @@ insert_node :: proc(
 	}
 
 	if node.size < SUBDIVISION_THRESHOLD && node.children == 0 {
-		index := get_next_index(qt)
-		qt.entries[index] = {
-			rect = rect,
-			data = data,
-			node = node_idx,
-			next = node.entries,
-			prev = 0,
-		}
-		if node.entries != 0 {
-			qt.entries[node.entries].prev = index
-		}
-		node.entries = index
-		node.size += 1
-		return index, true
+		return insert_entry(qt, node_idx, rect, data)
 	}
 
 	reached_node_limit := qt.node_count + 4 > int(MaxNodes)
@@ -241,11 +212,23 @@ insert_node :: proc(
 	quadrant := get_quadrant(node, rect)
 	// insert into child node
 	if quadrant != .None && node.children != 0 {
-		index := int(quadrant)
-		return insert_node(qt, node.children + index, rect, data)
+		return insert_node(qt, node.children + int(quadrant), rect, data)
 	}
 
 	// insert into current node
+	return insert_entry(qt, node_idx, rect, data)
+}
+
+insert_entry :: proc(
+	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
+	node_idx: int,
+	rect: Rectangle,
+	data: T,
+) -> (
+	int,
+	bool,
+) {
+	node := &qt.nodes[node_idx]
 	index := get_next_index(qt)
 	qt.entries[index] = {
 		rect = rect,
@@ -357,16 +340,6 @@ query_rectangle_node :: proc(
 	return result_count
 }
 
-circle_intersects_rectangle :: proc(center_x, center_y, radius: f32, rect: Rectangle) -> bool {
-	closest_x := math.clamp(center_x, rect.x, rect.x + rect.width)
-	closest_y := math.clamp(center_y, rect.y, rect.y + rect.height)
-
-	distance_x := center_x - closest_x
-	distance_y := center_y - closest_y
-
-	return distance_x * distance_x + distance_y * distance_y <= radius * radius
-}
-
 query_circle :: proc(
 	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
 	center_x, center_y, radius: f32,
@@ -387,7 +360,7 @@ query_circle_node :: proc(
 	}
 
 	node := &qt.nodes[node_idx]
-	if !circle_intersects_rectangle(center_x, center_y, radius, node.bounds) {
+	if !intersects(node.bounds, center_x, center_y, radius) {
 		return count
 	}
 
@@ -399,7 +372,7 @@ query_circle_node :: proc(
 		}
 
 		entry := qt.entries[current_index]
-		if !circle_intersects_rectangle(center_x, center_y, radius, entry.rect) {
+		if !intersects(entry.rect, center_x, center_y, radius) {
 			current_index = entry.next
 			continue
 		}
@@ -425,10 +398,6 @@ query_circle_node :: proc(
 	return result_count
 }
 
-point_in_rectangle :: proc(x, y: f32, rect: Rectangle) -> bool {
-	return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height
-}
-
 query_point :: proc(
 	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
 	x, y: f32,
@@ -448,7 +417,7 @@ query_point_node :: proc(
 	}
 
 	node := &qt.nodes[node_idx]
-	if !point_in_rectangle(x, y, node.bounds) {
+	if !contains(node.bounds, x, y) {
 		return count
 	}
 
@@ -460,7 +429,7 @@ query_point_node :: proc(
 		}
 
 		entry := qt.entries[current_index]
-		if !point_in_rectangle(x, y, entry.rect) {
+		if !contains(entry.rect, x, y) {
 			current_index = entry.next
 			continue
 		}
@@ -477,4 +446,44 @@ query_point_node :: proc(
 	}
 
 	return result_count
+}
+
+contains :: proc {
+	contains_rectangle,
+	contains_point,
+}
+
+contains_rectangle :: proc(rect: Rectangle, rect2: Rectangle) -> bool {
+	return(
+		rect2.x >= rect.x &&
+		rect2.x + rect2.width <= rect.x + rect.width &&
+		rect2.y >= rect.y &&
+		rect2.y + rect2.height <= rect.y + rect.height \
+	)
+}
+
+contains_point :: proc(rect: Rectangle, x, y: f32) -> bool {
+	return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height
+}
+
+intersects :: proc {
+	intersects_rectangle,
+	intersects_circle,
+}
+
+intersects_rectangle :: proc(rect1, rect2: Rectangle) -> bool {
+	return(
+		!(rect2.x > rect1.x + rect1.width ||
+			rect2.x + rect2.width < rect1.x ||
+			rect2.y > rect1.y + rect1.height ||
+			rect2.y + rect2.height < rect1.y) \
+	)
+}
+
+intersects_circle :: proc(rect: Rectangle, center_x, center_y, radius: f32) -> bool {
+	closest_x := math.clamp(center_x, rect.x, rect.x + rect.width)
+	closest_y := math.clamp(center_y, rect.y, rect.y + rect.height)
+	distance_x := center_x - closest_x
+	distance_y := center_y - closest_y
+	return distance_x * distance_x + distance_y * distance_y <= radius * radius
 }
