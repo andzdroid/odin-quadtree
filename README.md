@@ -65,7 +65,7 @@ Use the context pointer to pass extra data into the predicate function:
 context.user_ptr = your_data
 results = qt.query_rectangle(&tree, qt.Rectangle{}, proc(entry: qt.Entry(int)) -> bool {
   your_data := cast(^[]YourData)context.user_ptr
-  return your_data.field == true
+  return your_data[entry.data].field < 10
 })
 ```
 
