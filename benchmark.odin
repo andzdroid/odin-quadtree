@@ -17,6 +17,14 @@ Size of tree: 55.959229 MB
 Insert total:  500.106ms , average:  500ns
 Query total:  1.204676s , average:  12.046µs
 Remove total:  22.838ms , average:  22ns
+
+Nearest search:
+Size of tree: 56.012634 MB
+Insert total:  513.739ms , average:  513ns
+Rectangle query results (no predicate):  120775 , total:  1.201933s , average:  12.019µs
+Rectangle query results with predicate:  60078 , total:  1.159971s , average:  11.599µs
+Nearest query:  1000000 , total:  2.6043s , average:  260.43µs
+Remove total:  22.136ms , average:  22ns
 */
 
 MAX_NODES :: 65_537
@@ -105,6 +113,27 @@ main :: proc() {
 		elapsed,
 		", average: ",
 		elapsed / time.Duration(QUERY_ITERATIONS),
+	)
+
+	start = time.now()
+	count = 0
+	for i in 0 ..< 10000 {
+		results := qt.query_nearest(
+			tree,
+			rand.float32_range(0, 100000),
+			rand.float32_range(0, 100000),
+			100,
+		)
+		count += len(results)
+	}
+	elapsed = time.since(start)
+	fmt.println(
+		"Nearest query: ",
+		count,
+		", total: ",
+		elapsed,
+		", average: ",
+		elapsed / time.Duration(10000),
 	)
 
 	// remove

@@ -24,23 +24,28 @@ ok := qt.remove(&tree, index)
 
 // Search
 results := qt.query_point(&tree, x, y)
-for result in results {
-  // result.data is the same data that was inserted/updated
-}
-
 results = qt.query_rectangle(&tree, {x, y, width, height})
 results = qt.query_circle(&tree, x, y, radius)
+results = qt.query_nearest(&tree, x, y, k)
 
 // Search with predicate
-results = qt.query_rectangle(&tree, rect, proc(entry: qt.Entry(YourDataType)) -> bool {
+results = qt.query_rectangle(&tree, rect, proc(entry: qt.Entry(int)) -> bool {
   return entry.data % 2 == 0
 })
-results = qt.query_circle(&tree, x, y, radius, proc(entry: qt.Entry(YourDataType)) -> bool {
+results = qt.query_circle(&tree, x, y, radius, proc(entry: qt.Entry(int)) -> bool {
   return entry.data % 2 == 0
 })
-results = qt.query_point(&tree, x, y, proc(entry: qt.Entry(YourDataType)) -> bool {
+results = qt.query_point(&tree, x, y, proc(entry: qt.Entry(int)) -> bool {
   return entry.data % 2 == 0
 })
+results = qt.query_point(&tree, x, y, k, proc(entry: qt.Entry(int)) -> bool {
+  return entry.data % 2 == 0
+})
+
+for entry in results {
+  // entry.data is the same data that was inserted/updated
+}
+
 ```
 
 The Quadtree struct requires some parameters:
@@ -52,7 +57,7 @@ The Quadtree struct requires some parameters:
 
 ## Search with predicates
 
-You can pass a predicate to query functions to filter out entries while searching.
+You can pass a predicate to query functions to filter out entries while searching. This is especially useful when combined with nearest search.
 
 Use the context pointer to pass extra data into the predicate function:
 
@@ -83,3 +88,6 @@ Circle query:
 
 Predicate query:
 ![Predicate query](demo/predicate.png)
+
+Nearest query:
+![Nearest query](demo/nearest.png)

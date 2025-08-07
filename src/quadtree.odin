@@ -31,6 +31,7 @@ Quadtree :: struct($MaxNodes: int, $MaxEntries: int, $MaxResults: int, $T: typei
 	entry_count: int,
 	next_free:   int, // free list is singly linked
 	results:     [MaxResults]Entry(T),
+	temp:        [MaxResults]Entry(T), // used for sorting for nearest queries
 }
 
 Quadrant :: enum {
@@ -296,7 +297,7 @@ query_rectangle_simple :: proc(
 	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
 	rect: Rectangle,
 ) -> []Entry(T) {
-	count := query_rectangle_node(qt, 0, rect, 0)
+	count := query_rectangle_node(qt, 0, rect, nil, 0)
 	return qt.results[:count]
 }
 
@@ -305,53 +306,11 @@ query_rectangle_with_predicate :: proc(
 	rect: Rectangle,
 	predicate: proc(entry: Entry(T)) -> bool,
 ) -> []Entry(T) {
-	count := query_rectangle_node_with_predicate(qt, 0, rect, predicate, 0)
+	count := query_rectangle_node(qt, 0, rect, predicate, 0)
 	return qt.results[:count]
 }
 
 query_rectangle_node :: proc(
-	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
-	node_idx: int,
-	rect: Rectangle,
-	count: int,
-) -> int {
-	if count >= MaxResults {
-		return count
-	}
-
-	node := &qt.nodes[node_idx]
-	if !intersects(node.bounds, rect) {
-		return count
-	}
-
-	result_count := count
-	current_index := node.entries
-	for current_index != 0 {
-		if result_count >= MaxResults {
-			break
-		}
-
-		entry := qt.entries[current_index]
-		if !intersects(rect, entry.rect) {
-			current_index = entry.next
-			continue
-		}
-
-		qt.results[result_count] = entry
-		result_count += 1
-		current_index = entry.next
-	}
-
-	if node.children != 0 {
-		for child_idx in 0 ..< 4 {
-			result_count = query_rectangle_node(qt, node.children + child_idx, rect, result_count)
-		}
-	}
-
-	return result_count
-}
-
-query_rectangle_node_with_predicate :: proc(
 	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
 	node_idx: int,
 	rect: Rectangle,
@@ -380,7 +339,7 @@ query_rectangle_node_with_predicate :: proc(
 			continue
 		}
 
-		if !predicate(entry) {
+		if predicate != nil && !predicate(entry) {
 			current_index = entry.next
 			continue
 		}
@@ -392,7 +351,7 @@ query_rectangle_node_with_predicate :: proc(
 
 	if node.children != 0 {
 		for child_idx in 0 ..< 4 {
-			result_count = query_rectangle_node_with_predicate(
+			result_count = query_rectangle_node(
 				qt,
 				node.children + child_idx,
 				rect,
@@ -415,7 +374,7 @@ query_circle_simple :: proc(
 	center_x, center_y, radius: f32,
 ) -> []Entry(T) {
 	assert(radius >= 0, "radius must be non-negative")
-	count := query_circle_node(qt, 0, center_x, center_y, radius, 0)
+	count := query_circle_node(qt, 0, center_x, center_y, radius, nil, 0)
 	return qt.results[:count]
 }
 
@@ -424,7 +383,8 @@ query_circle_with_predicate :: proc(
 	center_x, center_y, radius: f32,
 	predicate: proc(entry: Entry(T)) -> bool,
 ) -> []Entry(T) {
-	count := query_circle_node_with_predicate(qt, 0, center_x, center_y, radius, predicate, 0)
+	assert(radius >= 0, "radius must be non-negative")
+	count := query_circle_node(qt, 0, center_x, center_y, radius, predicate, 0)
 	return qt.results[:count]
 }
 
@@ -432,6 +392,7 @@ query_circle_node :: proc(
 	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
 	node_idx: int,
 	center_x, center_y, radius: f32,
+	predicate: proc(entry: Entry(T)) -> bool,
 	count: int,
 ) -> int {
 	if count >= MaxResults {
@@ -452,6 +413,11 @@ query_circle_node :: proc(
 
 		entry := qt.entries[current_index]
 		if !intersects(entry.rect, center_x, center_y, radius) {
+			current_index = entry.next
+			continue
+		}
+
+		if predicate != nil && !predicate(entry) {
 			current_index = entry.next
 			continue
 		}
@@ -464,61 +430,6 @@ query_circle_node :: proc(
 	if node.children != 0 {
 		for child_idx in 0 ..< 4 {
 			result_count = query_circle_node(
-				qt,
-				node.children + child_idx,
-				center_x,
-				center_y,
-				radius,
-				result_count,
-			)
-		}
-	}
-
-	return result_count
-}
-
-query_circle_node_with_predicate :: proc(
-	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
-	node_idx: int,
-	center_x, center_y, radius: f32,
-	predicate: proc(entry: Entry(T)) -> bool,
-	count: int,
-) -> int {
-	if count >= MaxResults {
-		return count
-	}
-
-	node := &qt.nodes[node_idx]
-	if !intersects(node.bounds, center_x, center_y, radius) {
-		return count
-	}
-
-	result_count := count
-	current_index := node.entries
-	for current_index != 0 {
-		if result_count >= MaxResults {
-			break
-		}
-
-		entry := qt.entries[current_index]
-		if !intersects(entry.rect, center_x, center_y, radius) {
-			current_index = entry.next
-			continue
-		}
-
-		if !predicate(entry) {
-			current_index = entry.next
-			continue
-		}
-
-		qt.results[result_count] = entry
-		result_count += 1
-		current_index = entry.next
-	}
-
-	if node.children != 0 {
-		for child_idx in 0 ..< 4 {
-			result_count = query_circle_node_with_predicate(
 				qt,
 				node.children + child_idx,
 				center_x,
@@ -542,7 +453,7 @@ query_point_simple :: proc(
 	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
 	x, y: f32,
 ) -> []Entry(T) {
-	count := query_point_node(qt, 0, x, y, 0)
+	count := query_point_node(qt, 0, x, y, nil, 0)
 	return qt.results[:count]
 }
 
@@ -551,53 +462,11 @@ query_point_with_predicate :: proc(
 	x, y: f32,
 	predicate: proc(entry: Entry(T)) -> bool,
 ) -> []Entry(T) {
-	count := query_point_node_with_predicate(qt, 0, x, y, predicate, 0)
+	count := query_point_node(qt, 0, x, y, predicate, 0)
 	return qt.results[:count]
 }
 
 query_point_node :: proc(
-	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
-	node_idx: int,
-	x, y: f32,
-	count: int,
-) -> int {
-	if count >= MaxResults {
-		return count
-	}
-
-	node := &qt.nodes[node_idx]
-	if !contains(node.bounds, x, y) {
-		return count
-	}
-
-	result_count := count
-	current_index := node.entries
-	for current_index != 0 {
-		if result_count >= MaxResults {
-			break
-		}
-
-		entry := qt.entries[current_index]
-		if !contains(entry.rect, x, y) {
-			current_index = entry.next
-			continue
-		}
-
-		qt.results[result_count] = entry
-		result_count += 1
-		current_index = entry.next
-	}
-
-	if node.children != 0 {
-		for child_idx in 0 ..< 4 {
-			result_count = query_point_node(qt, node.children + child_idx, x, y, result_count)
-		}
-	}
-
-	return result_count
-}
-
-query_point_node_with_predicate :: proc(
 	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
 	node_idx: int,
 	x, y: f32,
@@ -626,7 +495,7 @@ query_point_node_with_predicate :: proc(
 			continue
 		}
 
-		if !predicate(entry) {
+		if predicate != nil && !predicate(entry) {
 			current_index = entry.next
 			continue
 		}
@@ -638,7 +507,7 @@ query_point_node_with_predicate :: proc(
 
 	if node.children != 0 {
 		for child_idx in 0 ..< 4 {
-			result_count = query_point_node_with_predicate(
+			result_count = query_point_node(
 				qt,
 				node.children + child_idx,
 				x,
@@ -650,6 +519,227 @@ query_point_node_with_predicate :: proc(
 	}
 
 	return result_count
+}
+
+query_nearest :: proc {
+	query_nearest_simple,
+	query_nearest_with_predicate,
+}
+
+query_nearest_simple :: proc(
+	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
+	x, y: f32,
+	k: int,
+) -> []Entry(T) {
+	assert(k > 0, "k must be positive")
+	assert(k <= MaxResults, "k must be less than or equal to MaxResults")
+	count := query_nearest_node(qt, 0, x, y, k, nil, 0)
+	sort_by_distance(qt, qt.results[:count], x, y)
+	return qt.results[:count]
+}
+
+query_nearest_with_predicate :: proc(
+	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
+	x, y: f32,
+	k: int,
+	predicate: proc(entry: Entry(T)) -> bool,
+) -> []Entry(T) {
+	assert(k > 0, "k must be positive")
+	assert(k <= MaxResults, "k must be less than or equal to MaxResults")
+	count := query_nearest_node(qt, 0, x, y, k, predicate, 0)
+	sort_by_distance(qt, qt.results[:count], x, y)
+	return qt.results[:count]
+}
+
+query_nearest_node :: proc(
+	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
+	node_idx: int,
+	x, y: f32,
+	k: int,
+	predicate: proc(entry: Entry(T)) -> bool,
+	count: int,
+) -> int {
+	node := &qt.nodes[node_idx]
+
+	result_count := count
+	current_index := node.entries
+	for current_index != 0 {
+		entry := qt.entries[current_index]
+		if predicate != nil && !predicate(entry) {
+			current_index = entry.next
+			continue
+		}
+		distance := distance_to_rect(entry.rect, x, y)
+		result_count = heap_insert(qt, entry, x, y, result_count, k)
+		current_index = entry.next
+	}
+
+	if node.children != 0 {
+		// Sort child nodes by distance to target point
+		child_order: [4]struct {
+			idx:      int,
+			distance: f32,
+		}
+		child_order = {
+			{idx = 0, distance = distance_to_rect(qt.nodes[node.children].bounds, x, y)},
+			{idx = 1, distance = distance_to_rect(qt.nodes[node.children + 1].bounds, x, y)},
+			{idx = 2, distance = distance_to_rect(qt.nodes[node.children + 2].bounds, x, y)},
+			{idx = 3, distance = distance_to_rect(qt.nodes[node.children + 3].bounds, x, y)},
+		}
+		for i in 1 ..< 4 {
+			key := child_order[i]
+			j := i - 1
+			for j >= 0 && child_order[j].distance > key.distance {
+				child_order[j + 1] = child_order[j]
+				j -= 1
+			}
+			child_order[j + 1] = key
+		}
+
+		for child in child_order {
+			if result_count > k {
+				continue
+			}
+
+			if result_count == k {
+				max_dist := distance_to_rect(qt.results[0].rect, x, y)
+				if child.distance >= max_dist {
+					continue
+				}
+			}
+
+			result_count = query_nearest_node(
+				qt,
+				node.children + child.idx,
+				x,
+				y,
+				k,
+				predicate,
+				result_count,
+			)
+		}
+	}
+
+	return result_count
+}
+
+distance_to_rect :: proc(rect: Rectangle, x, y: f32) -> f32 {
+	dx := math.max(0, math.max(rect.x - x, x - (rect.x + rect.width)))
+	dy := math.max(0, math.max(rect.y - y, y - (rect.y + rect.height)))
+	return dx * dx + dy * dy
+}
+
+heap_insert :: proc(
+	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
+	entry: Entry(T),
+	x, y: f32,
+	count: int,
+	k: int,
+) -> int {
+	distance := distance_to_rect(entry.rect, x, y)
+
+	if count < k {
+		qt.results[count] = entry
+		heap_bubble_up(qt.results[:count + 1], count, x, y)
+		return count + 1
+	}
+
+	max_dist := distance_to_rect(qt.results[0].rect, x, y)
+	if distance < max_dist {
+		qt.results[0] = entry
+		heap_bubble_down(qt.results[:k], 0, x, y)
+	}
+
+	return k
+}
+
+heap_bubble_up :: proc(heap: []Entry($T), index: int, x, y: f32) {
+	if index == 0 do return
+
+	parent := (index - 1) / 2
+	if distance_to_rect(heap[index].rect, x, y) > distance_to_rect(heap[parent].rect, x, y) {
+		heap[index], heap[parent] = heap[parent], heap[index]
+		heap_bubble_up(heap, parent, x, y)
+	}
+}
+
+heap_bubble_down :: proc(heap: []Entry($T), index: int, x, y: f32) {
+	size := len(heap)
+	largest := index
+	left := 2 * index + 1
+	right := 2 * index + 2
+
+	if left < size &&
+	   distance_to_rect(heap[left].rect, x, y) > distance_to_rect(heap[largest].rect, x, y) {
+		largest = left
+	}
+
+	if right < size &&
+	   distance_to_rect(heap[right].rect, x, y) > distance_to_rect(heap[largest].rect, x, y) {
+		largest = right
+	}
+
+	if largest != index {
+		heap[index], heap[largest] = heap[largest], heap[index]
+		heap_bubble_down(heap, largest, x, y)
+	}
+}
+
+sort_by_distance :: proc(
+	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
+	entries: []Entry(T),
+	x, y: f32,
+) {
+	if len(entries) <= 1 do return
+	merge_sort_by_distance(entries, qt.temp[:len(entries)], x, y)
+}
+
+merge_sort_by_distance :: proc(entries: []Entry($T), temp: []Entry(T), x, y: f32) {
+	if len(entries) <= 1 do return
+	mid := len(entries) / 2
+	left := entries[:mid]
+	right := entries[mid:]
+	merge_sort_by_distance(left, temp[:len(left)], x, y)
+	merge_sort_by_distance(right, temp[len(left):], x, y)
+	merge_by_distance(entries, left, right, temp, x, y)
+}
+
+merge_by_distance :: proc(
+	result: []Entry($T),
+	left: []Entry(T),
+	right: []Entry(T),
+	temp: []Entry(T),
+	x, y: f32,
+) {
+	i, j, k := 0, 0, 0
+
+	for i < len(left) && j < len(right) {
+		left_dist := distance_to_rect(left[i].rect, x, y)
+		right_dist := distance_to_rect(right[j].rect, x, y)
+
+		if left_dist <= right_dist {
+			temp[k] = left[i]
+			i += 1
+		} else {
+			temp[k] = right[j]
+			j += 1
+		}
+		k += 1
+	}
+
+	for i < len(left) {
+		temp[k] = left[i]
+		i += 1
+		k += 1
+	}
+
+	for j < len(right) {
+		temp[k] = right[j]
+		j += 1
+		k += 1
+	}
+
+	copy(result, temp[:len(result)])
 }
 
 contains :: proc {

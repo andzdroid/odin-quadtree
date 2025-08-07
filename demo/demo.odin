@@ -84,7 +84,7 @@ main :: proc() {
 		}
 
 		if rl.IsMouseButtonPressed(.RIGHT) {
-			query_mode = (query_mode + 1) % 5
+			query_mode = (query_mode + 1) % 6
 		}
 
 		// Draw quadtree
@@ -218,6 +218,22 @@ main :: proc() {
 				highlight_circle(circles[result.data])
 			}
 			rl.DrawCircleLinesV(rl.GetMousePosition(), 75, rl.RED)
+		case 5:
+			context.user_ptr = circles
+			results := qt.query_nearest(
+				tree,
+				rl.GetMousePosition().x,
+				rl.GetMousePosition().y,
+				3,
+				proc(entry: qt.Entry(int)) -> bool {
+					circles := cast(^[MAX_ENTRIES]Circle)context.user_ptr
+					circle := circles[entry.data]
+					return circle.color == .Red
+				},
+			)
+			for result in results {
+				highlight_circle(circles[result.data])
+			}
 		}
 
 		instructions := cstring("Left click to add, right click to change query")
@@ -265,6 +281,8 @@ query_mode_text :: proc(mode: int) -> string {
 		return "Rectangle (only red)"
 	case 4:
 		return "Circle (only red)"
+	case 5:
+		return "Nearest 3 red circles"
 	}
 	return ""
 }
