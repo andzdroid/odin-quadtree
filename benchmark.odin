@@ -57,8 +57,9 @@ main :: proc() {
 
 	// query
 	start = time.now()
+	count := 0
 	for i in 0 ..< QUERY_ITERATIONS {
-		qt.query_rectangle(
+		results := qt.query_rectangle(
 			tree,
 			{
 				x = rand.float32_range(0, 100000),
@@ -67,9 +68,44 @@ main :: proc() {
 				height = 100,
 			},
 		)
+		count += len(results)
 	}
 	elapsed = time.since(start)
-	fmt.println("Query total: ", elapsed, ", average: ", elapsed / time.Duration(QUERY_ITERATIONS))
+	fmt.println(
+		"Rectangle query results (no predicate): ",
+		count,
+		", total: ",
+		elapsed,
+		", average: ",
+		elapsed / time.Duration(QUERY_ITERATIONS),
+	)
+
+	start = time.now()
+	count = 0
+	for i in 0 ..< QUERY_ITERATIONS {
+		results := qt.query_rectangle(
+			tree,
+			{
+				x = rand.float32_range(0, 100000),
+				y = rand.float32_range(0, 100000),
+				width = 100,
+				height = 100,
+			},
+			proc(entry: qt.Entry(Handle)) -> bool {
+				return entry.data.index % 2 == 0
+			},
+		)
+		count += len(results)
+	}
+	elapsed = time.since(start)
+	fmt.println(
+		"Rectangle query results with predicate: ",
+		count,
+		", total: ",
+		elapsed,
+		", average: ",
+		elapsed / time.Duration(QUERY_ITERATIONS),
+	)
 
 	// remove
 	start = time.now()

@@ -431,3 +431,169 @@ test_update_multiple_sequential :: proc(t: ^testing.T) {
 	found = query_rectangle(&tree, Rectangle{20, 20, 60, 60})
 	testing.expect(t, len(found) == 1, "Should only find one entry total")
 }
+
+@(test)
+test_node_entry_list_integrity :: proc(t: ^testing.T) {
+	tree: Quadtree(100, 100, 10, int)
+	bounds := Rectangle{0, 0, 100, 100}
+	init(&tree, bounds)
+
+	insert(&tree, Rectangle{10, 10, 10, 10}, 1)
+	insert(&tree, Rectangle{30, 30, 10, 10}, 2)
+	insert(&tree, Rectangle{50, 50, 10, 10}, 3)
+
+	for node_idx in 0 ..< tree.node_count {
+		node := &tree.nodes[node_idx]
+		if node.size == 0 {
+			testing.expect(t, node.entries == 0, "Empty node should have entries = 0")
+			continue
+		}
+
+		current := node.entries
+		prev_idx := 0
+		count := 0
+		for current != 0 {
+			entry := &tree.entries[current]
+
+			// First entry has prev = 0
+			if prev_idx == 0 {
+				testing.expect(t, entry.prev == 0, "First entry should have prev = 0")
+			} else {
+				testing.expect(t, entry.prev == prev_idx, "Prev should point to previous entry")
+			}
+
+			testing.expect(t, entry.node == node_idx, "Entry.node should match actual node")
+
+			count += 1
+			testing.expect(t, count <= node.size, "No circular references in entry list")
+
+			prev_idx = current
+			current = entry.next
+		}
+
+		// Node size should match actual count
+		testing.expect(t, count == node.size, "Node size should match actual entry count")
+	}
+}
+
+@(test)
+test_free_list_integrity :: proc(t: ^testing.T) {
+	tree: Quadtree(100, 100, 10, int)
+	bounds := Rectangle{0, 0, 100, 100}
+	init(&tree, bounds)
+
+	idx1, _ := insert(&tree, Rectangle{10, 10, 10, 10}, 1)
+	idx2, _ := insert(&tree, Rectangle{30, 30, 10, 10}, 2)
+	idx3, _ := insert(&tree, Rectangle{50, 50, 10, 10}, 3)
+	remove(&tree, idx2)
+	remove(&tree, idx1)
+
+	if tree.next_free != 0 {
+		// next_free points to valid free entry
+		testing.expect(
+			t,
+			tree.next_free > 0 && tree.next_free <= tree.entry_count,
+			"next_free should point to valid entry index",
+		)
+
+		current := tree.next_free
+		count := 0
+		for current != 0 {
+			entry := &tree.entries[current]
+			testing.expect(t, entry.node == 0, "Free entry should have node = 0")
+			testing.expect(t, entry.prev == 0, "Free entry should have prev = 0")
+
+			count += 1
+			testing.expect(t, count <= tree.entry_count, "Free list should not have cycles")
+
+			current = entry.next
+		}
+	}
+}
+
+@(test)
+test_subdivision_pointer_integrity :: proc(t: ^testing.T) {
+	tree: Quadtree(100, 100, 10, int)
+	bounds := Rectangle{0, 0, 100, 100}
+	init(&tree, bounds)
+
+	idx1, _ := insert(&tree, Rectangle{25, 25, 10, 10}, 1) // NW
+	idx2, _ := insert(&tree, Rectangle{75, 25, 10, 10}, 2) // NE
+	idx3, _ := insert(&tree, Rectangle{25, 75, 10, 10}, 3) // SW
+	idx4, _ := insert(&tree, Rectangle{75, 75, 10, 10}, 4) // SE
+	idx5, _ := insert(&tree, Rectangle{45, 45, 10, 10}, 5) // Center (stays in root)
+
+	testing.expect(t, tree.nodes[0].children != 0, "Root should be subdivided")
+
+	// After subdivision: no entry appears in multiple node lists
+	entry_node_map := make(map[int]int) // entry_idx -> node_idx
+	defer delete(entry_node_map)
+
+	for node_idx in 0 ..< tree.node_count {
+		node := &tree.nodes[node_idx]
+		current := node.entries
+
+		for current != 0 {
+			if existing_node, exists := entry_node_map[current]; exists {
+				testing.expect(t, false, "Entry appears in multiple nodes")
+			}
+			entry_node_map[current] = node_idx
+
+			entry := &tree.entries[current]
+			testing.expect(t, entry.node == node_idx, "Entry.node should match containing node")
+			current = entry.next
+		}
+	}
+
+	active_entries := len(entry_node_map)
+	testing.expect(t, active_entries == 5, "All entries should be here")
+}
+
+@(test)
+test_remove_and_free_list_transition :: proc(t: ^testing.T) {
+	tree: Quadtree(100, 100, 10, int)
+	bounds := Rectangle{0, 0, 100, 100}
+	init(&tree, bounds)
+
+	idx1, _ := insert(&tree, Rectangle{10, 10, 10, 10}, 1)
+	idx2, _ := insert(&tree, Rectangle{30, 30, 10, 10}, 2)
+	idx3, _ := insert(&tree, Rectangle{50, 50, 10, 10}, 3)
+
+	old_next_free := tree.next_free
+
+	// Remove middle entry
+	removed := remove(&tree, idx2)
+	testing.expect(t, removed, "Should successfully remove entry")
+
+	root := &tree.nodes[0]
+	current := root.entries
+	found_removed_in_active := false
+	for current != 0 {
+		if current == idx2 {
+			found_removed_in_active = true
+			break
+		}
+		current = tree.entries[current].next
+	}
+	testing.expect(t, !found_removed_in_active, "Removed entry should not be in active node list")
+
+	testing.expect(t, tree.next_free == idx2, "Removed entry should become next_free")
+	removed_entry := &tree.entries[idx2]
+	testing.expect(
+		t,
+		removed_entry.next == old_next_free,
+		"Removed entry should link to old next_free",
+	)
+	testing.expect(t, removed_entry.prev == 0, "Removed entry should have prev = 0 in free list")
+	testing.expect(t, removed_entry.node == 0, "Removed entry should have node = 0")
+
+	idx4, ok := insert(&tree, Rectangle{70, 70, 10, 10}, 4)
+	testing.expect(t, ok, "Should be able to reuse freed entry")
+	testing.expect(t, idx4 == idx2, "Should reuse the freed entry index")
+	testing.expect(t, tree.next_free == old_next_free, "next_free should be updated to old value")
+
+	reused_entry := &tree.entries[idx4]
+	testing.expect(t, reused_entry.data == 4, "Reused entry should have new data")
+	testing.expect(t, reused_entry.node == 0, "Reused entry should be in root node")
+	testing.expect(t, reused_entry.prev == 0, "Reused entry should be first in node list")
+}

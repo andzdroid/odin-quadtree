@@ -19,7 +19,7 @@ Entry :: struct($T: typeid) {
 
 Node :: struct {
 	bounds:   Rectangle,
-	entries:  int, // index of first entry
+	entries:  int, // index of first entry, doubly linked list
 	size:     int,
 	children: int, // start index of child node indices, child nodes are contiguous
 }
@@ -29,7 +29,7 @@ Quadtree :: struct($MaxNodes: int, $MaxEntries: int, $MaxResults: int, $T: typei
 	entries:     [MaxEntries]Entry(T),
 	node_count:  int,
 	entry_count: int,
-	next_free:   int,
+	next_free:   int, // free list is singly linked
 	results:     [MaxResults]Entry(T),
 }
 
@@ -268,9 +268,6 @@ remove :: proc(qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T), index: in
 	entry.next = qt.next_free
 	entry.prev = 0
 	entry.node = 0
-	if entry.next != 0 {
-		qt.entries[entry.next].prev = index
-	}
 	qt.next_free = index
 	return true
 }
@@ -290,11 +287,25 @@ update :: proc(
 	return insert(qt, rect, data)
 }
 
-query_rectangle :: proc(
+query_rectangle :: proc {
+	query_rectangle_simple,
+	query_rectangle_with_predicate,
+}
+
+query_rectangle_simple :: proc(
 	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
 	rect: Rectangle,
 ) -> []Entry(T) {
 	count := query_rectangle_node(qt, 0, rect, 0)
+	return qt.results[:count]
+}
+
+query_rectangle_with_predicate :: proc(
+	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
+	rect: Rectangle,
+	predicate: proc(entry: Entry(T)) -> bool,
+) -> []Entry(T) {
+	count := query_rectangle_node_with_predicate(qt, 0, rect, predicate, 0)
 	return qt.results[:count]
 }
 
@@ -340,12 +351,80 @@ query_rectangle_node :: proc(
 	return result_count
 }
 
-query_circle :: proc(
+query_rectangle_node_with_predicate :: proc(
+	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
+	node_idx: int,
+	rect: Rectangle,
+	predicate: proc(entry: Entry(T)) -> bool,
+	count: int,
+) -> int {
+	if count >= MaxResults {
+		return count
+	}
+
+	node := &qt.nodes[node_idx]
+	if !intersects(node.bounds, rect) {
+		return count
+	}
+
+	result_count := count
+	current_index := node.entries
+	for current_index != 0 {
+		if result_count >= MaxResults {
+			break
+		}
+
+		entry := qt.entries[current_index]
+		if !intersects(rect, entry.rect) {
+			current_index = entry.next
+			continue
+		}
+
+		if !predicate(entry) {
+			current_index = entry.next
+			continue
+		}
+
+		qt.results[result_count] = entry
+		result_count += 1
+		current_index = entry.next
+	}
+
+	if node.children != 0 {
+		for child_idx in 0 ..< 4 {
+			result_count = query_rectangle_node_with_predicate(
+				qt,
+				node.children + child_idx,
+				rect,
+				predicate,
+				result_count,
+			)
+		}
+	}
+
+	return result_count
+}
+
+query_circle :: proc {
+	query_circle_simple,
+	query_circle_with_predicate,
+}
+
+query_circle_simple :: proc(
 	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
 	center_x, center_y, radius: f32,
 ) -> []Entry(T) {
 	assert(radius >= 0, "radius must be non-negative")
 	count := query_circle_node(qt, 0, center_x, center_y, radius, 0)
+	return qt.results[:count]
+}
+
+query_circle_with_predicate :: proc(
+	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
+	center_x, center_y, radius: f32,
+	predicate: proc(entry: Entry(T)) -> bool,
+) -> []Entry(T) {
+	count := query_circle_node_with_predicate(qt, 0, center_x, center_y, radius, predicate, 0)
 	return qt.results[:count]
 }
 
@@ -398,11 +477,81 @@ query_circle_node :: proc(
 	return result_count
 }
 
-query_point :: proc(
+query_circle_node_with_predicate :: proc(
+	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
+	node_idx: int,
+	center_x, center_y, radius: f32,
+	predicate: proc(entry: Entry(T)) -> bool,
+	count: int,
+) -> int {
+	if count >= MaxResults {
+		return count
+	}
+
+	node := &qt.nodes[node_idx]
+	if !intersects(node.bounds, center_x, center_y, radius) {
+		return count
+	}
+
+	result_count := count
+	current_index := node.entries
+	for current_index != 0 {
+		if result_count >= MaxResults {
+			break
+		}
+
+		entry := qt.entries[current_index]
+		if !intersects(entry.rect, center_x, center_y, radius) {
+			current_index = entry.next
+			continue
+		}
+
+		if !predicate(entry) {
+			current_index = entry.next
+			continue
+		}
+
+		qt.results[result_count] = entry
+		result_count += 1
+		current_index = entry.next
+	}
+
+	if node.children != 0 {
+		for child_idx in 0 ..< 4 {
+			result_count = query_circle_node_with_predicate(
+				qt,
+				node.children + child_idx,
+				center_x,
+				center_y,
+				radius,
+				predicate,
+				result_count,
+			)
+		}
+	}
+
+	return result_count
+}
+
+query_point :: proc {
+	query_point_simple,
+	query_point_with_predicate,
+}
+
+query_point_simple :: proc(
 	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
 	x, y: f32,
 ) -> []Entry(T) {
 	count := query_point_node(qt, 0, x, y, 0)
+	return qt.results[:count]
+}
+
+query_point_with_predicate :: proc(
+	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
+	x, y: f32,
+	predicate: proc(entry: Entry(T)) -> bool,
+) -> []Entry(T) {
+	count := query_point_node_with_predicate(qt, 0, x, y, predicate, 0)
 	return qt.results[:count]
 }
 
@@ -442,6 +591,61 @@ query_point_node :: proc(
 	if node.children != 0 {
 		for child_idx in 0 ..< 4 {
 			result_count = query_point_node(qt, node.children + child_idx, x, y, result_count)
+		}
+	}
+
+	return result_count
+}
+
+query_point_node_with_predicate :: proc(
+	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
+	node_idx: int,
+	x, y: f32,
+	predicate: proc(entry: Entry(T)) -> bool,
+	count: int,
+) -> int {
+	if count >= MaxResults {
+		return count
+	}
+
+	node := &qt.nodes[node_idx]
+	if !contains(node.bounds, x, y) {
+		return count
+	}
+
+	result_count := count
+	current_index := node.entries
+	for current_index != 0 {
+		if result_count >= MaxResults {
+			break
+		}
+
+		entry := qt.entries[current_index]
+		if !contains(entry.rect, x, y) {
+			current_index = entry.next
+			continue
+		}
+
+		if !predicate(entry) {
+			current_index = entry.next
+			continue
+		}
+
+		qt.results[result_count] = entry
+		result_count += 1
+		current_index = entry.next
+	}
+
+	if node.children != 0 {
+		for child_idx in 0 ..< 4 {
+			result_count = query_point_node_with_predicate(
+				qt,
+				node.children + child_idx,
+				x,
+				y,
+				predicate,
+				result_count,
+			)
 		}
 	}
 

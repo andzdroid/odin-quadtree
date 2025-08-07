@@ -13,12 +13,24 @@ MAX_NODES :: 1001
 MAX_ENTRIES :: 10000
 MAX_QUERY_RESULTS :: 100
 
+Color :: enum {
+	Red,
+	Green,
+	Blue,
+}
+
+ColorValues :: [Color]rl.Color {
+	.Red   = {200, 60, 30, 255},
+	.Green = {60, 200, 30, 255},
+	.Blue  = {30, 60, 200, 255},
+}
+
 Circle :: struct {
 	position:  rl.Vector2,
 	direction: rl.Vector2,
 	speed:     f32,
 	radius:    f32,
-	color:     rl.Color,
+	color:     Color,
 	index:     int,
 }
 
@@ -41,14 +53,15 @@ main :: proc() {
 
 	circle_count := 0
 	query_mode := 0
+	colors := ColorValues
 
 	for !rl.WindowShouldClose() {
 		rl.BeginDrawing()
 		rl.ClearBackground(rl.BLACK)
 
 		if rl.IsMouseButtonPressed(.LEFT) {
-			// spawn 10 circles
-			for i in 0 ..< 10 {
+			// spawn 100 circles
+			for i in 0 ..< 100 {
 				circle_index := circle_count
 				circle_count += 1
 
@@ -57,7 +70,7 @@ main :: proc() {
 					direction = {rand.float32_range(-1, 1), rand.float32_range(-1, 1)},
 					speed     = rand.float32_range(20, 150),
 					radius    = rand.float32_range(5, 15),
-					color     = random_color(),
+					color     = Color(rl.GetRandomValue(0, 2)),
 				}
 				rect := qt.Rectangle {
 					x      = circle.position.x - circle.radius,
@@ -71,7 +84,7 @@ main :: proc() {
 		}
 
 		if rl.IsMouseButtonPressed(.RIGHT) {
-			query_mode = (query_mode + 1) % 3
+			query_mode = (query_mode + 1) % 5
 		}
 
 		// Draw quadtree
@@ -117,7 +130,9 @@ main :: proc() {
 				i,
 			)
 
-			rl.DrawCircleV(circle.position, circle.radius, circle.color)
+			color :=
+				query_mode < 3 || circle.color == .Red ? colors[circle.color] : {200, 200, 200, 255}
+			rl.DrawCircleV(circle.position, circle.radius, color)
 		}
 
 		switch query_mode {
@@ -150,11 +165,59 @@ main :: proc() {
 				rl.RED,
 			)
 		case 2:
-			results := qt.query_circle(tree, rl.GetMousePosition().x, rl.GetMousePosition().y, 50)
+			results := qt.query_circle(tree, rl.GetMousePosition().x, rl.GetMousePosition().y, 75)
 			for result in results {
 				highlight_circle(circles[result.data])
 			}
-			rl.DrawCircleLinesV(rl.GetMousePosition(), 50, rl.RED)
+			rl.DrawCircleLinesV(rl.GetMousePosition(), 75, rl.RED)
+		case 3:
+			// only search for red circles
+			// if you need to pass data into the predicate, you can use context.user_ptr
+			context.user_ptr = circles
+			results := qt.query_rectangle(
+				tree,
+				{
+					x = rl.GetMousePosition().x - 75,
+					y = rl.GetMousePosition().y - 75,
+					width = 150,
+					height = 150,
+				},
+				proc(entry: qt.Entry(int)) -> bool {
+					circles := cast(^[MAX_ENTRIES]Circle)context.user_ptr
+					circle := circles[entry.data]
+					return circle.color == .Red
+				},
+			)
+			for result in results {
+				highlight_circle(circles[result.data])
+			}
+			rl.DrawRectangleLinesEx(
+				{
+					x = rl.GetMousePosition().x - 75,
+					y = rl.GetMousePosition().y - 75,
+					width = 150,
+					height = 150,
+				},
+				2,
+				rl.RED,
+			)
+		case 4:
+			context.user_ptr = circles
+			results := qt.query_circle_with_predicate(
+				tree,
+				rl.GetMousePosition().x,
+				rl.GetMousePosition().y,
+				75,
+				proc(entry: qt.Entry(int)) -> bool {
+					circles := cast(^[MAX_ENTRIES]Circle)context.user_ptr
+					circle := circles[entry.data]
+					return circle.color == .Red
+				},
+			)
+			for result in results {
+				highlight_circle(circles[result.data])
+			}
+			rl.DrawCircleLinesV(rl.GetMousePosition(), 75, rl.RED)
 		}
 
 		instructions := cstring("Left click to add, right click to change query")
@@ -174,15 +237,6 @@ main :: proc() {
 		rl.DrawText(instructions, 10, 130, 20, rl.WHITE)
 
 		rl.EndDrawing()
-	}
-}
-
-random_color :: proc() -> rl.Color {
-	return {
-		u8(rand.float32_range(50, 255)),
-		u8(rand.float32_range(50, 255)),
-		u8(rand.float32_range(50, 255)),
-		255,
 	}
 }
 
@@ -207,6 +261,10 @@ query_mode_text :: proc(mode: int) -> string {
 		return "Rectangle"
 	case 2:
 		return "Circle"
+	case 3:
+		return "Rectangle (only red)"
+	case 4:
+		return "Circle (only red)"
 	}
 	return ""
 }
