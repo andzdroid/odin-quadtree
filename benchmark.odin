@@ -99,8 +99,10 @@ main :: proc() {
 				width = 100,
 				height = 100,
 			},
-			proc(entry: qt.Entry(Handle)) -> bool {
-				return entry.data.index % 2 == 0
+			qt.QueryRectangleOptions(Handle) {
+				predicate = proc(entry: qt.Entry(Handle)) -> bool {
+					return entry.data.index % 2 == 0
+				},
 			},
 		)
 		count += len(results)

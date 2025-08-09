@@ -19,6 +19,7 @@ Entry :: struct($T: typeid) {
 
 Node :: struct {
 	bounds:   Rectangle,
+	center:   [2]f32, // pre-computed center
 	entries:  int, // index of first entry, doubly linked list
 	size:     int,
 	children: int, // start index of child node indices, child nodes are contiguous
@@ -46,6 +47,7 @@ init :: proc(qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T), bounds: Rec
 	assert(bounds.width > 0 && bounds.height > 0, "bounds must have positive dimensions")
 	qt.nodes[0] = {
 		bounds = bounds,
+		center = {bounds.x + bounds.width / 2, bounds.y + bounds.height / 2},
 	}
 	qt.node_count = 1
 }
@@ -65,8 +67,10 @@ subdivide :: proc(qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T), node_i
 	qt.node_count += 4
 	for i in 0 ..< 4 {
 		child_idx := node.children + i
+		bounds := get_quadrant_bounds(node.bounds, Quadrant(i))
 		qt.nodes[child_idx] = {
-			bounds = get_quadrant_bounds(node.bounds, Quadrant(i)),
+			bounds = bounds,
+			center = {bounds.x + bounds.width / 2, bounds.y + bounds.height / 2},
 		}
 	}
 
@@ -119,18 +123,14 @@ subdivide :: proc(qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T), node_i
 }
 
 get_quadrant :: proc(node: ^Node, rect: Rectangle) -> Quadrant {
-	half_width := node.bounds.width / 2
-	half_height := node.bounds.height / 2
-	mid_x := node.bounds.x + half_width
-	mid_y := node.bounds.y + half_height
-
-	top := rect.y + rect.height < mid_y
-	bottom := rect.y >= mid_y
-	left := rect.x + rect.width < mid_x
-	right := rect.x >= mid_x
-
+	top := rect.y + rect.height < node.center.y
+	right := rect.x >= node.center.x
 	if top && right do return .NE
+
+	left := rect.x + rect.width < node.center.x
 	if top && left do return .NW
+
+	bottom := rect.y >= node.center.y
 	if bottom && left do return .SW
 	if bottom && right do return .SE
 	return .None
@@ -288,25 +288,34 @@ update :: proc(
 	return insert(qt, rect, data)
 }
 
+QueryRectangleOptions :: struct($T: typeid) {
+	max_results: int,
+	predicate:   proc(entry: Entry(T)) -> bool,
+}
+
 query_rectangle :: proc {
 	query_rectangle_simple,
-	query_rectangle_with_predicate,
+	query_rectangle_with_options,
 }
 
 query_rectangle_simple :: proc(
 	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
 	rect: Rectangle,
 ) -> []Entry(T) {
-	count := query_rectangle_node(qt, 0, rect, nil, 0)
+	options := QueryRectangleOptions(T) {
+		max_results = MaxResults,
+		predicate   = nil,
+	}
+	count := query_rectangle_node(qt, 0, rect, options, 0)
 	return qt.results[:count]
 }
 
-query_rectangle_with_predicate :: proc(
+query_rectangle_with_options :: proc(
 	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
 	rect: Rectangle,
-	predicate: proc(entry: Entry(T)) -> bool,
+	options: QueryRectangleOptions(T),
 ) -> []Entry(T) {
-	count := query_rectangle_node(qt, 0, rect, predicate, 0)
+	count := query_rectangle_node(qt, 0, rect, options, 0)
 	return qt.results[:count]
 }
 
@@ -314,10 +323,11 @@ query_rectangle_node :: proc(
 	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
 	node_idx: int,
 	rect: Rectangle,
-	predicate: proc(entry: Entry(T)) -> bool,
+	options: QueryRectangleOptions(T),
 	count: int,
 ) -> int {
-	if count >= MaxResults {
+	max_results := options.max_results != 0 ? min(options.max_results, MaxResults) : MaxResults
+	if count >= max_results {
 		return count
 	}
 
@@ -329,7 +339,7 @@ query_rectangle_node :: proc(
 	result_count := count
 	current_index := node.entries
 	for current_index != 0 {
-		if result_count >= MaxResults {
+		if result_count >= max_results {
 			break
 		}
 
@@ -339,7 +349,7 @@ query_rectangle_node :: proc(
 			continue
 		}
 
-		if predicate != nil && !predicate(entry) {
+		if options.predicate != nil && !options.predicate(entry) {
 			current_index = entry.next
 			continue
 		}
@@ -355,7 +365,7 @@ query_rectangle_node :: proc(
 				qt,
 				node.children + child_idx,
 				rect,
-				predicate,
+				options,
 				result_count,
 			)
 		}
@@ -364,9 +374,14 @@ query_rectangle_node :: proc(
 	return result_count
 }
 
+QueryCircleOptions :: struct($T: typeid) {
+	max_results: int,
+	predicate:   proc(entry: Entry(T)) -> bool,
+}
+
 query_circle :: proc {
 	query_circle_simple,
-	query_circle_with_predicate,
+	query_circle_with_options,
 }
 
 query_circle_simple :: proc(
@@ -374,17 +389,21 @@ query_circle_simple :: proc(
 	center_x, center_y, radius: f32,
 ) -> []Entry(T) {
 	assert(radius >= 0, "radius must be non-negative")
-	count := query_circle_node(qt, 0, center_x, center_y, radius, nil, 0)
+	options := QueryCircleOptions(T) {
+		max_results = MaxResults,
+		predicate   = nil,
+	}
+	count := query_circle_node(qt, 0, center_x, center_y, radius, options, 0)
 	return qt.results[:count]
 }
 
-query_circle_with_predicate :: proc(
+query_circle_with_options :: proc(
 	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
 	center_x, center_y, radius: f32,
-	predicate: proc(entry: Entry(T)) -> bool,
+	options: QueryCircleOptions(T),
 ) -> []Entry(T) {
 	assert(radius >= 0, "radius must be non-negative")
-	count := query_circle_node(qt, 0, center_x, center_y, radius, predicate, 0)
+	count := query_circle_node(qt, 0, center_x, center_y, radius, options, 0)
 	return qt.results[:count]
 }
 
@@ -392,10 +411,11 @@ query_circle_node :: proc(
 	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
 	node_idx: int,
 	center_x, center_y, radius: f32,
-	predicate: proc(entry: Entry(T)) -> bool,
+	options: QueryCircleOptions(T),
 	count: int,
 ) -> int {
-	if count >= MaxResults {
+	max_results := options.max_results != 0 ? min(options.max_results, MaxResults) : MaxResults
+	if count >= max_results {
 		return count
 	}
 
@@ -407,7 +427,7 @@ query_circle_node :: proc(
 	result_count := count
 	current_index := node.entries
 	for current_index != 0 {
-		if result_count >= MaxResults {
+		if result_count >= max_results {
 			break
 		}
 
@@ -417,7 +437,7 @@ query_circle_node :: proc(
 			continue
 		}
 
-		if predicate != nil && !predicate(entry) {
+		if options.predicate != nil && !options.predicate(entry) {
 			current_index = entry.next
 			continue
 		}
@@ -435,7 +455,7 @@ query_circle_node :: proc(
 				center_x,
 				center_y,
 				radius,
-				predicate,
+				options,
 				result_count,
 			)
 		}
@@ -444,25 +464,34 @@ query_circle_node :: proc(
 	return result_count
 }
 
+QueryPointOptions :: struct($T: typeid) {
+	max_results: int,
+	predicate:   proc(entry: Entry(T)) -> bool,
+}
+
 query_point :: proc {
 	query_point_simple,
-	query_point_with_predicate,
+	query_point_with_options,
 }
 
 query_point_simple :: proc(
 	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
 	x, y: f32,
 ) -> []Entry(T) {
-	count := query_point_node(qt, 0, x, y, nil, 0)
+	options := QueryPointOptions(T) {
+		max_results = MaxResults,
+		predicate   = nil,
+	}
+	count := query_point_node(qt, 0, x, y, options, 0)
 	return qt.results[:count]
 }
 
-query_point_with_predicate :: proc(
+query_point_with_options :: proc(
 	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
 	x, y: f32,
-	predicate: proc(entry: Entry(T)) -> bool,
+	options: QueryPointOptions(T),
 ) -> []Entry(T) {
-	count := query_point_node(qt, 0, x, y, predicate, 0)
+	count := query_point_node(qt, 0, x, y, options, 0)
 	return qt.results[:count]
 }
 
@@ -470,10 +499,11 @@ query_point_node :: proc(
 	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
 	node_idx: int,
 	x, y: f32,
-	predicate: proc(entry: Entry(T)) -> bool,
+	options: QueryPointOptions(T),
 	count: int,
 ) -> int {
-	if count >= MaxResults {
+	max_results := options.max_results != 0 ? min(options.max_results, MaxResults) : MaxResults
+	if count >= max_results {
 		return count
 	}
 
@@ -485,7 +515,7 @@ query_point_node :: proc(
 	result_count := count
 	current_index := node.entries
 	for current_index != 0 {
-		if result_count >= MaxResults {
+		if result_count >= max_results {
 			break
 		}
 
@@ -495,7 +525,7 @@ query_point_node :: proc(
 			continue
 		}
 
-		if predicate != nil && !predicate(entry) {
+		if options.predicate != nil && !options.predicate(entry) {
 			current_index = entry.next
 			continue
 		}
@@ -512,7 +542,7 @@ query_point_node :: proc(
 				node.children + child_idx,
 				x,
 				y,
-				predicate,
+				options,
 				result_count,
 			)
 		}
@@ -521,9 +551,15 @@ query_point_node :: proc(
 	return result_count
 }
 
+QueryNearestOptions :: struct($T: typeid) {
+	max_results:  int,
+	max_distance: f32,
+	predicate:    proc(entry: Entry(T)) -> bool,
+}
+
 query_nearest :: proc {
 	query_nearest_simple,
-	query_nearest_with_predicate,
+	query_nearest_with_options,
 }
 
 query_nearest_simple :: proc(
@@ -533,20 +569,27 @@ query_nearest_simple :: proc(
 ) -> []Entry(T) {
 	assert(k > 0, "k must be positive")
 	assert(k <= MaxResults, "k must be less than or equal to MaxResults")
-	count := query_nearest_node(qt, 0, x, y, k, nil, 0)
+	options := QueryNearestOptions(T) {
+		max_results  = k,
+		max_distance = 0,
+		predicate    = nil,
+	}
+	count := query_nearest_node(qt, 0, x, y, options, 0)
 	sort_by_distance(qt, qt.results[:count], x, y)
 	return qt.results[:count]
 }
 
-query_nearest_with_predicate :: proc(
+query_nearest_with_options :: proc(
 	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
 	x, y: f32,
-	k: int,
-	predicate: proc(entry: Entry(T)) -> bool,
+	options: QueryNearestOptions(T),
 ) -> []Entry(T) {
-	assert(k > 0, "k must be positive")
-	assert(k <= MaxResults, "k must be less than or equal to MaxResults")
-	count := query_nearest_node(qt, 0, x, y, k, predicate, 0)
+	assert(options.max_results > 0, "max_results must be positive")
+	assert(
+		options.max_results <= MaxResults,
+		"max_results must be less than or equal to MaxResults",
+	)
+	count := query_nearest_node(qt, 0, x, y, options, 0)
 	sort_by_distance(qt, qt.results[:count], x, y)
 	return qt.results[:count]
 }
@@ -555,22 +598,27 @@ query_nearest_node :: proc(
 	qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T),
 	node_idx: int,
 	x, y: f32,
-	k: int,
-	predicate: proc(entry: Entry(T)) -> bool,
+	options: QueryNearestOptions(T),
 	count: int,
 ) -> int {
+	max_results := options.max_results != 0 ? min(options.max_results, MaxResults) : MaxResults
+	max_distance := options.max_distance != 0 ? options.max_distance : 0
+
 	node := &qt.nodes[node_idx]
 
 	result_count := count
 	current_index := node.entries
 	for current_index != 0 {
 		entry := qt.entries[current_index]
-		if predicate != nil && !predicate(entry) {
+		if options.predicate != nil && !options.predicate(entry) {
 			current_index = entry.next
 			continue
 		}
-		distance := distance_to_rect(entry.rect, x, y)
-		result_count = heap_insert(qt, entry, x, y, result_count, k)
+		if max_distance != 0 && distance_to_rect(entry.rect, x, y) > max_distance {
+			current_index = entry.next
+			continue
+		}
+		result_count = heap_insert(qt, entry, x, y, result_count, max_results)
 		current_index = entry.next
 	}
 
@@ -597,13 +645,14 @@ query_nearest_node :: proc(
 		}
 
 		for child in child_order {
-			if result_count > k {
+			if result_count > max_results {
 				continue
 			}
 
-			if result_count == k {
+			if result_count == max_results {
 				max_dist := distance_to_rect(qt.results[0].rect, x, y)
-				if child.distance >= max_dist {
+				if child.distance >= max_dist ||
+				   (options.max_distance != 0 && child.distance > options.max_distance) {
 					continue
 				}
 			}
@@ -613,8 +662,7 @@ query_nearest_node :: proc(
 				node.children + child.idx,
 				x,
 				y,
-				k,
-				predicate,
+				options,
 				result_count,
 			)
 		}

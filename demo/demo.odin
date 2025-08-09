@@ -182,10 +182,12 @@ main :: proc() {
 					width = 150,
 					height = 150,
 				},
-				proc(entry: qt.Entry(int)) -> bool {
-					circles := cast(^[MAX_ENTRIES]Circle)context.user_ptr
-					circle := circles[entry.data]
-					return circle.color == .Red
+				qt.QueryRectangleOptions(int) {
+					predicate = proc(entry: qt.Entry(int)) -> bool {
+						circles := cast(^[MAX_ENTRIES]Circle)context.user_ptr
+						circle := circles[entry.data]
+						return circle.color == .Red
+					},
 				},
 			)
 			for result in results {
@@ -203,15 +205,17 @@ main :: proc() {
 			)
 		case 4:
 			context.user_ptr = circles
-			results := qt.query_circle_with_predicate(
+			results := qt.query_circle(
 				tree,
 				rl.GetMousePosition().x,
 				rl.GetMousePosition().y,
 				75,
-				proc(entry: qt.Entry(int)) -> bool {
-					circles := cast(^[MAX_ENTRIES]Circle)context.user_ptr
-					circle := circles[entry.data]
-					return circle.color == .Red
+				qt.QueryCircleOptions(int) {
+					predicate = proc(entry: qt.Entry(int)) -> bool {
+						circles := cast(^[MAX_ENTRIES]Circle)context.user_ptr
+						circle := circles[entry.data]
+						return circle.color == .Red
+					},
 				},
 			)
 			for result in results {
@@ -224,11 +228,13 @@ main :: proc() {
 				tree,
 				rl.GetMousePosition().x,
 				rl.GetMousePosition().y,
-				3,
-				proc(entry: qt.Entry(int)) -> bool {
-					circles := cast(^[MAX_ENTRIES]Circle)context.user_ptr
-					circle := circles[entry.data]
-					return circle.color == .Red
+				qt.QueryNearestOptions(int) {
+					max_results = 3,
+					predicate = proc(entry: qt.Entry(int)) -> bool {
+						circles := cast(^[MAX_ENTRIES]Circle)context.user_ptr
+						circle := circles[entry.data]
+						return circle.color == .Red
+					},
 				},
 			)
 			for result in results {
