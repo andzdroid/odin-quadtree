@@ -602,7 +602,7 @@ query_nearest_node :: proc(
 	count: int,
 ) -> int {
 	max_results := options.max_results != 0 ? min(options.max_results, MaxResults) : MaxResults
-	max_distance := options.max_distance != 0 ? options.max_distance : 0
+	max_distance := options.max_distance != 0 ? options.max_distance * options.max_distance : 0
 
 	node := &qt.nodes[node_idx]
 

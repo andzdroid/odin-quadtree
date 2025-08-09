@@ -230,6 +230,7 @@ main :: proc() {
 				rl.GetMousePosition().y,
 				qt.QueryNearestOptions(int) {
 					max_results = 3,
+					max_distance = 300,
 					predicate = proc(entry: qt.Entry(int)) -> bool {
 						circles := cast(^[MAX_ENTRIES]Circle)context.user_ptr
 						circle := circles[entry.data]
