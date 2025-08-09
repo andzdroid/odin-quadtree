@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install odin
+        uses: laytan/setup-odin@v2.11.0
+
+      - name: Run tests
+        run: odin test src
+
+      - name: Run benchmark
+        run: odin run .
