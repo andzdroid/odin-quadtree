@@ -195,7 +195,7 @@ insert_node :: proc(
 	}
 
 	if qt.entry_count >= int(MaxEntries) && qt.next_free == 0 {
-		// log.infof("Quadtree entries are full: %v / %v", qt.entry_count, int(MaxEntries))
+		log.infof("Quadtree entries are full: %v / %v", qt.entry_count, int(MaxEntries))
 		return 0, false
 	}
 

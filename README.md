@@ -91,3 +91,21 @@ Predicate query:
 
 Nearest query:
 ![Nearest query](demo/nearest.png)
+
+## Design decisions and optimizations
+
+Nodes store the index of the first child node only. Nodes are contiguous, so the 4 children of a node are at index `node.children`, `node.children+1`, `node.children+2` and `node.children+3`.
+
+Nodes store the index of the first entry only. Entries are stored as a doubly linked list. Changing from storing an array of entry indexes to a linked list reduced memory usage by 90%.
+
+Entries are a doubly linked list instead of a singly linked list. This greatly speeds up the removal of entries. Removal is the fastest operation at around 20ns per op in my benchmark.
+
+Bounds are stored with the node. I tried calculating bounds instead of storing them, and this reduced performance in exchange for a tiny savings in memory usage.
+
+Freed entries are stored as a singly linked list, with the quadtree pointing to the head only. This means we don't need to keep track of every freed entry, only the latest one.
+
+Subdivision threshold is not a customizable parameter. I saw no changes in performance with different thresholds.
+
+Implementing the quadtree as a loose quadtree made no improvement to performance.
+
+Entries that cross a boundary are stored on the parent instead of being duplicated in multiple child nodes. I never implemented storing duplicates so I can't compare the two. Storing on the parent feels much simpler.
