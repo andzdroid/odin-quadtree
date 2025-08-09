@@ -91,7 +91,7 @@ main :: proc() {
 	start = time.now()
 	count = 0
 	for i in 0 ..< QUERY_ITERATIONS {
-		results := qt.query_rectangle(
+		results := qt.query_rectangle_with_predicate(
 			tree,
 			{
 				x = rand.float32_range(0, 100000),
@@ -99,10 +99,8 @@ main :: proc() {
 				width = 100,
 				height = 100,
 			},
-			qt.QueryRectangleOptions(Handle) {
-				predicate = proc(entry: qt.Entry(Handle)) -> bool {
-					return entry.data.index % 2 == 0
-				},
+			proc(entry: qt.Entry(Handle)) -> bool {
+				return entry.data.index % 2 == 0
 			},
 		)
 		count += len(results)
@@ -124,7 +122,7 @@ main :: proc() {
 			tree,
 			rand.float32_range(0, 100000),
 			rand.float32_range(0, 100000),
-			100,
+			{max_results = 100, max_distance = 10000},
 		)
 		count += len(results)
 	}

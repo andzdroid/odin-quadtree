@@ -174,7 +174,7 @@ main :: proc() {
 			// only search for red circles
 			// if you need to pass data into the predicate, you can use context.user_ptr
 			context.user_ptr = circles
-			results := qt.query_rectangle(
+			results := qt.query_rectangle_with_predicate(
 				tree,
 				{
 					x = rl.GetMousePosition().x - 75,
@@ -182,12 +182,10 @@ main :: proc() {
 					width = 150,
 					height = 150,
 				},
-				qt.QueryRectangleOptions(int) {
-					predicate = proc(entry: qt.Entry(int)) -> bool {
-						circles := cast(^[MAX_ENTRIES]Circle)context.user_ptr
-						circle := circles[entry.data]
-						return circle.color == .Red
-					},
+				proc(entry: qt.Entry(int)) -> bool {
+					circles := cast(^[MAX_ENTRIES]Circle)context.user_ptr
+					circle := circles[entry.data]
+					return circle.color == .Red
 				},
 			)
 			for result in results {
@@ -205,17 +203,15 @@ main :: proc() {
 			)
 		case 4:
 			context.user_ptr = circles
-			results := qt.query_circle(
+			results := qt.query_circle_with_predicate(
 				tree,
 				rl.GetMousePosition().x,
 				rl.GetMousePosition().y,
 				75,
-				qt.QueryCircleOptions(int) {
-					predicate = proc(entry: qt.Entry(int)) -> bool {
-						circles := cast(^[MAX_ENTRIES]Circle)context.user_ptr
-						circle := circles[entry.data]
-						return circle.color == .Red
-					},
+				proc(entry: qt.Entry(int)) -> bool {
+					circles := cast(^[MAX_ENTRIES]Circle)context.user_ptr
+					circle := circles[entry.data]
+					return circle.color == .Red
 				},
 			)
 			for result in results {
@@ -224,19 +220,16 @@ main :: proc() {
 			rl.DrawCircleLinesV(rl.GetMousePosition(), 75, rl.RED)
 		case 5:
 			context.user_ptr = circles
-			results := qt.query_nearest(
+			results := qt.query_nearest_with_predicate(
 				tree,
 				rl.GetMousePosition().x,
 				rl.GetMousePosition().y,
-				qt.QueryNearestOptions(int) {
-					max_results = 3,
-					max_distance = 300,
-					predicate = proc(entry: qt.Entry(int)) -> bool {
-						circles := cast(^[MAX_ENTRIES]Circle)context.user_ptr
-						circle := circles[entry.data]
-						return circle.color == .Red
-					},
+				proc(entry: qt.Entry(int)) -> bool {
+					circles := cast(^[MAX_ENTRIES]Circle)context.user_ptr
+					circle := circles[entry.data]
+					return circle.color == .Red
 				},
+				{max_results = 3, max_distance = 300},
 			)
 			for result in results {
 				highlight_circle(circles[result.data])

@@ -26,28 +26,18 @@ ok := qt.remove(&tree, index)
 results := qt.query_point(&tree, x, y)
 results = qt.query_rectangle(&tree, {x, y, width, height})
 results = qt.query_circle(&tree, x, y, radius)
-results = qt.query_nearest(&tree, x, y, k)
+results = qt.query_nearest(&tree, x, y, {max_results = 5})
 
-// Search with options
-results = qt.query_rectangle(&tree, rect, qt.QueryRectangleOptions(int){
-  max_results = 5,
-  predicate = proc(entry: qt.Entry(int)) -> bool {
+// Search with predicate
+results = qt.query_rectangle_with_predicate(&tree, rect, proc(entry: qt.Entry(int)) -> bool {
     return entry.data % 2 == 0
-  },
 })
-results = qt.query_circle(&tree, x, y, radius, qt.QueryCircleOptions(int){
-  max_results = 5,
-  predicate = predicate
-})
-results = qt.query_point(&tree, x, y, qt.QueryPointOptions(int){
-  max_results = 5,
-  predicate = predicate,
-})
-results = qt.query_nearest(&tree, x, y, qt.QueryNearestOptions(int){
-  max_results = 5,
-  max_distance = f32(100),
-  predicate = predicate
-})
+results = qt.query_circle_with_predicate(&tree, x, y, radius, predicate)
+results = qt.query_point_with_predicate(&tree, x, y, predicate)
+results = qt.query_nearest_with_predicate(&tree, x, y, predicate, {max_results = 5, max_distance = 100})
+
+// All query functions have an optional last parameter for query options.
+// Set a max_distance on query_nearest_with_predicate to avoid searching the whole tree when there are few matching results.
 
 for entry in results {
   // entry.data is the same data that was inserted/updated
