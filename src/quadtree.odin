@@ -203,14 +203,15 @@ insert_node :: proc(
 		return insert_entry(qt, node_idx, rect, data)
 	}
 
+	quadrant := get_quadrant(node, rect)
+
 	reached_node_limit := qt.node_count + 4 > int(MaxNodes)
-	if node.children == 0 && !reached_node_limit {
+	if quadrant != .None && node.children == 0 && !reached_node_limit {
 		if !subdivide(qt, node_idx) {
 			return 0, false
 		}
 	}
 
-	quadrant := get_quadrant(node, rect)
 	// insert into child node
 	if quadrant != .None && node.children != 0 {
 		return insert_node(qt, node.children + int(quadrant), rect, data)
