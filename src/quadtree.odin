@@ -18,11 +18,11 @@ Entry :: struct($T: typeid) {
 }
 
 Node :: struct {
-	bounds:   Rectangle,
-	center:   [2]f32, // pre-computed center
-	entries:  int, // index of first entry, doubly linked list
-	size:     int,
-	children: int, // start index of child node indices, child nodes are contiguous
+	bounds:      Rectangle,
+	center:      [2]f32, // pre-computed center
+	entries:     int, // index of first entry, doubly linked list
+	entry_count: int,
+	children:    int, // start index of child node indices, child nodes are contiguous
 }
 
 Quadtree :: struct($MaxNodes: int, $MaxEntries: int, $MaxResults: int, $T: typeid) {
@@ -75,7 +75,7 @@ subdivide :: proc(qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T), node_i
 	}
 
 	// try to move entries into children
-	if node.size > 0 {
+	if node.entry_count > 0 {
 		current_index := node.entries
 		for current_index != 0 {
 			entry := &qt.entries[current_index]
@@ -97,7 +97,7 @@ subdivide :: proc(qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T), node_i
 			entry.prev = 0
 			entry.node = child_node_idx
 			child_node.entries = current_index
-			child_node.size += 1
+			child_node.entry_count += 1
 			if entry.next != 0 {
 				qt.entries[entry.next].prev = current_index
 			}
@@ -113,7 +113,7 @@ subdivide :: proc(qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T), node_i
 				qt.entries[next_index].prev = prev_index
 			}
 
-			node.size -= 1
+			node.entry_count -= 1
 
 			current_index = next_index
 		}
@@ -199,20 +199,19 @@ insert_node :: proc(
 		return 0, false
 	}
 
-	if node.size < SUBDIVISION_THRESHOLD && node.children == 0 {
+	if node.entry_count < SUBDIVISION_THRESHOLD && node.children == 0 {
 		return insert_entry(qt, node_idx, rect, data)
 	}
 
-	quadrant := get_quadrant(node, rect)
-
 	reached_node_limit := qt.node_count + 4 > int(MaxNodes)
-	if quadrant != .None && node.children == 0 && !reached_node_limit {
+	if node.children == 0 && !reached_node_limit {
 		if !subdivide(qt, node_idx) {
 			return 0, false
 		}
 	}
 
 	// insert into child node
+	quadrant := get_quadrant(node, rect)
 	if quadrant != .None && node.children != 0 {
 		return insert_node(qt, node.children + int(quadrant), rect, data)
 	}
@@ -243,7 +242,7 @@ insert_entry :: proc(
 		qt.entries[node.entries].prev = index
 	}
 	node.entries = index
-	node.size += 1
+	node.entry_count += 1
 	return index, true
 }
 
@@ -266,7 +265,7 @@ remove :: proc(qt: ^Quadtree($MaxNodes, $MaxEntries, $MaxResults, $T), index: in
 	}
 
 	// move to free list
-	node.size -= 1
+	node.entry_count -= 1
 	entry.next = qt.next_free
 	entry.prev = 0
 	entry.node = 0

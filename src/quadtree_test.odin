@@ -26,7 +26,7 @@ test_point_insertion :: proc(t: ^testing.T) {
 	idx2, ok2 := insert(&tree, p2, 2)
 	testing.expect(t, ok2, "Should insert second point")
 	testing.expect(t, idx2 == 2, "Should return index 2")
-	testing.expect(t, tree.nodes[0].size == 2, "Root should have 2 points")
+	testing.expect(t, tree.nodes[0].entry_count == 2, "Root should have 2 points")
 }
 
 @(test)
@@ -42,17 +42,17 @@ test_subdivision :: proc(t: ^testing.T) {
 	insert(&tree, Rectangle{45, 45, 10, 10}, 5)
 
 	testing.expect(t, tree.nodes[0].children != 0, "Should subdivide")
-	testing.expect(t, tree.nodes[0].size == 1, "Root should have 1 entry after subdivision")
+	testing.expect(t, tree.nodes[0].entry_count == 1, "Root should have 1 entry after subdivision")
 
 	nw := tree.nodes[0].children
 	ne := tree.nodes[0].children + 1
 	sw := tree.nodes[0].children + 2
 	se := tree.nodes[0].children + 3
 
-	testing.expect(t, tree.nodes[nw].size == 1, "NW should have 1 entry")
-	testing.expect(t, tree.nodes[ne].size == 1, "NE should have 1 entry")
-	testing.expect(t, tree.nodes[sw].size == 1, "SW should have 1 entry")
-	testing.expect(t, tree.nodes[se].size == 1, "SE should have 1 entry")
+	testing.expect(t, tree.nodes[nw].entry_count == 1, "NW should have 1 entry")
+	testing.expect(t, tree.nodes[ne].entry_count == 1, "NE should have 1 entry")
+	testing.expect(t, tree.nodes[sw].entry_count == 1, "SW should have 1 entry")
+	testing.expect(t, tree.nodes[se].entry_count == 1, "SE should have 1 entry")
 
 	nw_node := &tree.nodes[nw]
 	ne_node := &tree.nodes[ne]
@@ -199,11 +199,11 @@ test_remove_basic :: proc(t: ^testing.T) {
 
 	idx, ok := insert(&tree, Rectangle{25, 25, 10, 10}, 1)
 	testing.expect(t, ok, "Should insert entry")
-	testing.expect(t, tree.nodes[0].size == 1, "Should have 1 entry")
+	testing.expect(t, tree.nodes[0].entry_count == 1, "Should have 1 entry")
 
 	removed := remove(&tree, idx)
 	testing.expect(t, removed, "Should remove entry")
-	testing.expect(t, tree.nodes[0].size == 0, "Should have 0 entries after removal")
+	testing.expect(t, tree.nodes[0].entry_count == 0, "Should have 0 entries after removal")
 	testing.expect(t, tree.entry_count == 1, "Entry count should be 1")
 	testing.expect(t, tree.next_free == idx, "Index should be next free entry")
 }
@@ -218,7 +218,7 @@ test_remove_invalid_index :: proc(t: ^testing.T) {
 
 	removed := remove(&tree, 999)
 	testing.expect(t, !removed, "Should not remove invalid index")
-	testing.expect(t, tree.nodes[0].size == 1, "Should still have 1 entry")
+	testing.expect(t, tree.nodes[0].entry_count == 1, "Should still have 1 entry")
 }
 
 @(test)
@@ -239,7 +239,7 @@ test_remove_from_subdivided :: proc(t: ^testing.T) {
 	testing.expect(t, removed, "Should remove from NE quadrant")
 
 	ne_idx := tree.nodes[0].children + 1
-	testing.expect(t, tree.nodes[ne_idx].size == 0, "NE should be empty")
+	testing.expect(t, tree.nodes[ne_idx].entry_count == 0, "NE should be empty")
 
 	found := query_rectangle(&tree, Rectangle{70, 20, 20, 20})
 	testing.expect(t, len(found) == 0, "Should not find removed entry")
@@ -260,11 +260,11 @@ test_remove_from_root_after_subdivision :: proc(t: ^testing.T) {
 	idx4, _ := insert(&tree, Rectangle{75, 75, 10, 10}, 4)
 	idx5, _ := insert(&tree, Rectangle{45, 45, 10, 10}, 5)
 
-	testing.expect(t, tree.nodes[0].size == 1, "Root should have 1 entry")
+	testing.expect(t, tree.nodes[0].entry_count == 1, "Root should have 1 entry")
 
 	removed := remove(&tree, idx5)
 	testing.expect(t, removed, "Should remove from root")
-	testing.expect(t, tree.nodes[0].size == 0, "Root should be empty")
+	testing.expect(t, tree.nodes[0].entry_count == 0, "Root should be empty")
 
 	found := query_rectangle(&tree, Rectangle{40, 40, 20, 20})
 	testing.expect(t, len(found) == 0, "Should not find removed entry")
@@ -280,16 +280,16 @@ test_remove_multiple_entries :: proc(t: ^testing.T) {
 	idx2, _ := insert(&tree, Rectangle{30, 30, 10, 10}, 2)
 	idx3, _ := insert(&tree, Rectangle{50, 50, 10, 10}, 3)
 
-	testing.expect(t, tree.nodes[0].size == 3, "Should have 3 entries")
+	testing.expect(t, tree.nodes[0].entry_count == 3, "Should have 3 entries")
 
 	remove(&tree, idx2)
-	testing.expect(t, tree.nodes[0].size == 2, "Should have 2 entries")
+	testing.expect(t, tree.nodes[0].entry_count == 2, "Should have 2 entries")
 
 	remove(&tree, idx1)
-	testing.expect(t, tree.nodes[0].size == 1, "Should have 1 entry")
+	testing.expect(t, tree.nodes[0].entry_count == 1, "Should have 1 entry")
 
 	remove(&tree, idx3)
-	testing.expect(t, tree.nodes[0].size == 0, "Should have 0 entries")
+	testing.expect(t, tree.nodes[0].entry_count == 0, "Should have 0 entries")
 
 	found := query_rectangle(&tree, Rectangle{0, 0, 100, 100})
 	log.infof("found: %v", found)
@@ -347,7 +347,7 @@ test_update_invalid_index :: proc(t: ^testing.T) {
 	new_idx, updated := update(&tree, 999, Rectangle{75, 75, 10, 10}, 2)
 	testing.expect(t, !updated, "Should not update invalid index")
 	testing.expect(t, new_idx == 0, "Should return 0 for invalid update")
-	testing.expect(t, tree.nodes[0].size == 1, "Should still have original entry")
+	testing.expect(t, tree.nodes[0].entry_count == 1, "Should still have original entry")
 }
 
 @(test)
@@ -361,7 +361,11 @@ test_update_out_of_bounds :: proc(t: ^testing.T) {
 	new_idx, updated := update(&tree, idx, Rectangle{-10, 50, 10, 10}, 2)
 	testing.expect(t, !updated, "Should not update to out of bounds")
 	testing.expect(t, new_idx == 0, "Should return 0 for failed update")
-	testing.expect(t, tree.nodes[0].size == 0, "Entry should be removed even if reinsert fails")
+	testing.expect(
+		t,
+		tree.nodes[0].entry_count == 0,
+		"Entry should be removed even if reinsert fails",
+	)
 }
 
 @(test)
@@ -383,8 +387,8 @@ test_update_subdivided_to_different_quadrant :: proc(t: ^testing.T) {
 
 	nw_idx := tree.nodes[0].children
 	se_idx := tree.nodes[0].children + 3
-	testing.expect(t, tree.nodes[nw_idx].size == 0, "NW should be empty")
-	testing.expect(t, tree.nodes[se_idx].size == 2, "SE should have 2 entries")
+	testing.expect(t, tree.nodes[nw_idx].entry_count == 0, "NW should be empty")
+	testing.expect(t, tree.nodes[se_idx].entry_count == 2, "SE should have 2 entries")
 
 	found := query_rectangle(&tree, Rectangle{20, 20, 20, 20})
 	testing.expect(t, len(found) == 0, "Should not find old NW entry")
@@ -444,7 +448,7 @@ test_node_entry_list_integrity :: proc(t: ^testing.T) {
 
 	for node_idx in 0 ..< tree.node_count {
 		node := &tree.nodes[node_idx]
-		if node.size == 0 {
+		if node.entry_count == 0 {
 			testing.expect(t, node.entries == 0, "Empty node should have entries = 0")
 			continue
 		}
@@ -465,14 +469,14 @@ test_node_entry_list_integrity :: proc(t: ^testing.T) {
 			testing.expect(t, entry.node == node_idx, "Entry.node should match actual node")
 
 			count += 1
-			testing.expect(t, count <= node.size, "No circular references in entry list")
+			testing.expect(t, count <= node.entry_count, "No circular references in entry list")
 
 			prev_idx = current
 			current = entry.next
 		}
 
 		// Node size should match actual count
-		testing.expect(t, count == node.size, "Node size should match actual entry count")
+		testing.expect(t, count == node.entry_count, "Node size should match actual entry count")
 	}
 }
 
